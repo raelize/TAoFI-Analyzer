@@ -24,6 +24,8 @@ import dash_bootstrap_components as dbc
 
 DEBUG_PRINT_CALLBACK = False
 
+_RECORDS = None
+
 def update_legend_labels(fig,labels):
     for entry in fig.data:
         if entry['name'] in labels:
@@ -90,17 +92,13 @@ def get_parameters(directory, database):
     except Exception as e:
         print("ERROR (get_parameters): %s" %(e))
 
-def run(args, debug=False):
-
-    if args.port == None:
-        port = 8080
-
+def run_app(serverip, serverport, directory, x, y, debug=False):
     app = Dash(__name__, external_stylesheets=[dbc.themes.LUX])
     app.css.config.serve_locally = True
     app.scripts.config.serve_locally = True
 
     app.layout = html.Div([
-            dcc.Store(id='memory', data={'directory':args.directory}),
+            dcc.Store(id='memory', data={'directory':directory}),
             html.Div([
                 html.H4('Research by Raelize'),
             ],style={'width':'80%','border-style':'none','margin':'0 auto'}),               
@@ -115,8 +113,8 @@ def run(args, debug=False):
                 ]),
                 dcc.Input(id='query-input', type="text", list='examples', style={'width':'80%','display': 'inline-block'}, placeholder=f"SELECT * FROM experiments WHERE"),
                 dcc.Dropdown(id='database-dropdown', style={'width':'100%'}),
-                dcc.Dropdown(id='x-dropdown', style={'width':'100%'}, value=args.x),
-                dcc.Dropdown(id='y-dropdown', style={'width':'100%'}, value=args.y),
+                dcc.Dropdown(id='x-dropdown', style={'width':'100%'}, value=x),
+                dcc.Dropdown(id='y-dropdown', style={'width':'100%'}, value=y),
                 html.Center([
                     dcc.Graph(id='graph', style={'width':'80%'}), 
                 ]),
@@ -268,7 +266,7 @@ def run(args, debug=False):
     )
     def update_dropdown_database(databases):
         print("called:", inspect.stack()[0][3]) if DEBUG_PRINT_CALLBACK else None
-        return get_databases(args.directory)
+        return get_databases(directory)
 
     # callback for x list
     @app.callback(
@@ -283,7 +281,7 @@ def run(args, debug=False):
 
         if 'database' not in store or store['database'] == None:
             raise PreventUpdate
-        return get_parameters(args.directory, store['database'])
+        return get_parameters(directory, store['database'])
 
     # callback for y list
     @app.callback(
@@ -298,7 +296,7 @@ def run(args, debug=False):
 
         if 'database' not in store or store['database'] == None:
             raise PreventUpdate
-        return get_parameters(args.directory, store['database'])
+        return get_parameters(directory, store['database'])
 
     def percentage(val=None,total=None):
         return "{:.1%}".format(0.1234)
@@ -468,6 +466,8 @@ def run(args, debug=False):
         ]
     )
     def update_graph(store, x, y, green, greenlabel, yellow, yellowlabel, magenta, magentalabel, orange, orangelabel, cyan, cyanlabel, blue, bluelabel, black, blacklabel, red, redlabel):
+        global _RECORDS
+
         print("called:", inspect.stack()[0][3]) if DEBUG_PRINT_CALLBACK else None
 
         if debug:
@@ -483,10 +483,10 @@ def run(args, debug=False):
         # remove number of experiments from database name
         database = store['database']
 
-        if not os.path.isfile(f"{args.directory}/{database}"):
+        if not os.path.isfile(f"{directory}/{database}"):
             raise PreventUpdate
 
-        con = sqlite3.connect(f"{args.directory}/{database}")
+        con = sqlite3.connect(f"{directory}/{database}")
 
         # add some functions to sqlite
         con.create_function('match_string', 2, match_string)
@@ -505,14 +505,14 @@ def run(args, debug=False):
         except:
             raise PreventUpdate
 
-        # convert to numpy array for faster processing
-        records = df.to_dict('records')
+        # store records from global
+        _RECORDS = df.to_dict('records')
 
         # color amounts
         colors = { 'P':0,'G':0,'Y':0,'M':0,'O':0,'C':0,'B':0,'Z':0,'R':0 }
 
         # recolor if needed
-        for record in records:
+        for record in _RECORDS:
             record['color'] = recolor(record, green, 'G')
             record['color'] = recolor(record, yellow, 'Y')
             record['color'] = recolor(record, magenta, 'M')
@@ -523,16 +523,13 @@ def run(args, debug=False):
             record['color'] = recolor(record, red, 'R')
             colors[record['color']] += 1
         
-        # store records to store
-        store['records'] = records
-
         # get amount of experiments
-        nr_of_current_experiments = len(records) 
+        nr_of_current_experiments = len(_RECORDS) 
 
         # output plot
         try:
             fig = px.scatter(
-                records,
+                _RECORDS,
                 x = x, 
                 y = y,
                 render_mode = "webgl",
@@ -615,23 +612,22 @@ def run(args, debug=False):
         prevent_initial_call=True
     )
     def update_data(store, figure, combine, colorchecklist):
+        global _RECORDS
+
         if figure == None:
             raise PreventUpdate
 
-        if 'records' not in store:
+        if _RECORDS == None:
             raise PreventUpdate
 
         if debug:
             now = round(time.time() * 1000)
 
-        # load records from store
-        records = store['records']
-
         # check if data should be combined
         if combine == 'Combine data':
-            records,columns = combine_data(records, colorchecklist)
+            _RECORDS,columns = combine_data(_RECORDS, colorchecklist)
         else:
-            records,columns = combine_data_no(records, colorchecklist)
+            _RECORDS,columns = combine_data_no(_RECORDS, colorchecklist)
 
         # cell style
         cell_style = []
@@ -656,7 +652,7 @@ def run(args, debug=False):
         data = dash_table.DataTable(
             id='table',
             columns=[{"name": i, "id": i} for i in columns],
-            data=records,
+            data=_RECORDS,
             filter_action='native',
             sort_action="native",
             page_action='native',
@@ -673,20 +669,41 @@ def run(args, debug=False):
 
         return data
 
-    # start server on localhost
-    app.run_server(host='127.0.0.1', port=port, debug=True)
+    app.run_server(host=serverip, port=serverport, debug=True)
+
+def run(args, debug=False):
+
+    # server ip
+    if args.remote:
+        serverip = "0.0.0.0"
+    else:
+        serverip = "127.0.0.1"
+
+    # server port
+    if args.port == None:
+        serverport = 8080
+
+    # directory
+    directory = args.directory
+
+    # default arguments
+    x = args.x
+    y = args.y
+
+    run_app(serverip, serverport, directory, x, y, debug=False)
 
 if __name__ == "__main__":
-    __version__ = "1.0"
+    __version__ = "2.0"
 
     parser = argparse.ArgumentParser(
         description="analyzer.py v%s - Raelize Glitch Analyzer" % __version__,
         prog="analyzer"
     ) 
-    parser.add_argument("--directory",help="Database directory", required=True)
+    parser.add_argument("--directory",help="Database directorys", required=True)
     parser.add_argument("--port",help="Server port")
     parser.add_argument("--x", required=False, help="Preset the x parameter")
     parser.add_argument("--y", required=False, help="Preset the y parameter")
+    parser.add_argument("--remote", required=False, action='store_true', help="Listen on 0.0.0.0 instead of localhost")
 
     args = parser.parse_args()
 
