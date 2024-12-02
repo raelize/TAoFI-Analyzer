@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-
 import argparse
 import plotly.express as px
 import pandas as pd
+import numpy as np
 import random
 import datetime
 import sqlite3
@@ -12,17 +12,17 @@ import sys
 from operator import itemgetter
 import datetime
 import shutil
+from contextlib import closing
+import json
+import os
+import inspect
 
 from os import listdir
 from dash import Dash, dcc, html, dash_table, Input, Output, State
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 
-AS = {}
-AS['directory'] = None
-AS['database'] = None
-AS['argv'] = None
-AS['start_time'] = None
+DEBUG_PRINT_CALLBACK = False
 
 def update_legend_labels(fig,labels):
     for entry in fig.data:
@@ -30,48 +30,15 @@ def update_legend_labels(fig,labels):
             entry['name'] = labels[entry['name']]
 
 def get_number_of_experiments(directory, database):
-    conn = sqlite3.connect(f"file:{directory}/{database}?mode=ro", uri=True)
-    cursor = conn.cursor()
-    query = f"SELECT COUNT(*) FROM experiments"
-    cursor.execute(query)
-    result = cursor.fetchone()
-    row_count = result[0]
-    conn.close()
-    return row_count
+    database_path = os.path.join(directory, database)
 
-def get_start_time(directory, database):
-    conn = sqlite3.connect(f"file:{directory}/{database}?mode=ro", uri=True)
-    cursor = conn.cursor()
-    query = f"SELECT stime_seconds FROM metadata"
-    cursor.execute(query)
-    result = cursor.fetchone()
-    seconds = result[0]
-    conn.close()
-    return seconds
-
-def update_metadata(directory, database):
-
-    AS['directory'] = directory
-    AS['database'] = database
-
-    conn = sqlite3.connect(f"file:{directory}/{database}?mode=ro", uri=True)
-    cursor = conn.cursor()
-    query = f"SELECT * FROM metadata"
-    cursor.execute(query)
-    result = cursor.fetchone()
-    AS['start_time'] = result[0]
-    conn.close()
-    
     try:
-        conn = sqlite3.connect(f"file:{directory}/{database}?mode=ro", uri=True)
-        cursor = conn.cursor()    
-        query = f"SELECT argv FROM metadata"
-        cursor.execute(query)
-        result = cursor.fetchone()
-        AS['argv'] = result[0]
-        conn.close()
-    except:
-        AS['argv'] = 'Missing from database'
+        with closing(sqlite3.connect(database_path)) as connection:
+            with closing(connection.cursor()) as cursor:
+                cursor.execute("SELECT COUNT(*) FROM experiments")
+                return cursor.fetchone()[0]
+    except Exception as e:
+        print("ERROR (get_number_of_experiments): %s" %(e))
 
 def get_databases(directory):
     # get databases
@@ -85,13 +52,47 @@ def get_databases(directory):
     databases_new = []
     for index in range(len(databases)):
         databases_new.append('%s (%d)' %(databases[index], get_number_of_experiments(directory, databases[index])))
-
     return databases_new
 
-def run(directory, port, debug=False):
-    DATABASE_DIRECTORY = directory
+def get_start_time(directory, database):
+    database_path = os.path.join(directory, database)
 
-    if port == None:
+    try:
+        with closing(sqlite3.connect(database_path)) as connection:
+            with closing(connection.cursor()) as cursor:
+                cursor.execute("SELECT stime_seconds FROM metadata")
+                return cursor.fetchone()[0]
+    except Exception as e:
+        print("ERROR (get_start_time): %s" %(e))
+
+def get_argv(directory, database):
+    database_path = os.path.join(directory, database)
+
+    try:
+        with closing(sqlite3.connect(database_path)) as connection:
+            with closing(connection.cursor()) as cursor:
+                cursor.execute("SELECT argv FROM metadata")
+                argvstr = cursor.fetchone()[0]
+                return argvstr
+    except Exception as e:
+        print("ERROR (get_argv): %s" %(e))
+
+def get_parameters(directory, database):
+    database_path = os.path.join(directory, database)
+    
+    try:
+        with closing(sqlite3.connect(database_path)) as connection:
+            with closing(connection.cursor()) as cursor:
+                cursor.execute("SELECT * FROM experiments")
+                parameters = list(next(zip(*cursor.description)))
+                parameters.remove('response')
+                return parameters
+    except Exception as e:
+        print("ERROR (get_parameters): %s" %(e))
+
+def run(args, debug=False):
+
+    if args.port == None:
         port = 8080
 
     app = Dash(__name__, external_stylesheets=[dbc.themes.LUX])
@@ -99,6 +100,7 @@ def run(directory, port, debug=False):
     app.scripts.config.serve_locally = True
 
     app.layout = html.Div([
+            dcc.Store(id='memory', data={'directory':args.directory}),
             html.Div([
                 html.H4('Research by Raelize'),
             ],style={'width':'80%','border-style':'none','margin':'0 auto'}),               
@@ -112,9 +114,11 @@ def run(directory, port, debug=False):
                     html.Option(value="length > 100"),
                 ]),
                 dcc.Input(id='query-input', type="text", list='examples', style={'width':'80%','display': 'inline-block'}, placeholder=f"SELECT * FROM experiments WHERE"),
-                dcc.Dropdown(id='graph-dropdown', style={'width':'100%'}),
+                dcc.Dropdown(id='database-dropdown', style={'width':'100%'}),
+                dcc.Dropdown(id='x-dropdown', style={'width':'100%'}, value=args.x),
+                dcc.Dropdown(id='y-dropdown', style={'width':'100%'}, value=args.y),
                 html.Center([
-                    dcc.Graph(id='graph', style={'width':'80%'}),
+                    dcc.Graph(id='graph', style={'width':'80%'}), 
                 ]),
                 html.P('re.search(*, response)'),
                 dcc.Input(id='recolor-green', type="text", placeholder="green", style={'width':'15%'}),
@@ -134,31 +138,167 @@ def run(directory, port, debug=False):
                 dcc.Input(id='recolor-black-label', type="text", placeholder="black-label", style={'width':'10%'}),
                 dcc.Input(id='recolor-red', type="text", placeholder="red", style={'width':'15%'}),
                 dcc.Input(id='recolor-red-label', type="text", placeholder="red-label", style={'width':'10%'}),
-
                 html.Br(),
-                html.Label('Combine data?'),
-                dcc.RadioItems(id='combine-data', options=['Yes', 'No'], value='Yes', inline=True),
+                html.Div(dcc.RadioItems(id='combine-data', options=['Combine data', 'Do not combine data'], value='Combine data', inline=True, inputStyle={'margin':'10px'}),
+                    style={'display': 'inline-block'}),
+                html.Br(),
+                dcc.Checklist(id='colorchecklist', options=[
+                                                        {'label': 'Green', 'value': 'G'},
+                                                        {'label': 'Yellow', 'value': 'Y'},
+                                                        {'label': 'Magenta', 'value': 'M'},
+                                                        {'label': 'Orange', 'value': 'O'},
+                                                        {'label': 'Cyan', 'value': 'C'},
+                                                        {'label': 'Blue', 'value': 'B'},
+                                                        {'label': 'Black', 'value': 'Z'},
+                                                        {'label': 'Red', 'value': 'R'} 
+                                                    ], value=['G', 'Y', 'M', 'O', 'C', 'B', 'Z', 'R'], inline=True, inputStyle={"margin":"5px"}), 
                 html.Div(id='data',style={'width':'100%', 'height':'80%', 'border-style':'none'}),
                 html.Label('Arguments:'),
-                html.Label('lalala', id='argv'),
+                html.P(id='argv'),
+                html.Br(),
+                html.Label('Points:'),
+                dcc.Markdown('', id='points'),
+                html.Label('Store:'),
+                dcc.Markdown('', id='printstore'),
             ],style={'width':'80%','border-style':'none','margin':'0 auto'}),
         ],style={'width':'100%', 'border-style':'none', 'margin-top':'100px','margin-bottom':'100px'})
 
-    # callback for database list
+    # callback for zoomed doints
     @app.callback(
-        Output("argv", "children"),
-        Input('update-button', 'n_clicks')
+        Output('points', 'children'),
+        [
+            Input('graph', 'relayoutData'),
+            Input('graph', 'figure')
+        ]
     )
-    def update_argv(n_clicks):
-        return AS['argv']
+    def zoomed_points(relayoutData, figure):
+        print("called:", inspect.stack()[0][3]) if DEBUG_PRINT_CALLBACK else None
+
+        if figure == None or 'xaxis.range[0]' not in relayoutData:
+            raise PreventUpdate
+
+        if 'xaxis.range[0]' in relayoutData:
+            x_tit = figure["layout"]["xaxis"]['title']['text'] 
+            x_min = relayoutData['xaxis.range[0]']
+            x_max = relayoutData['xaxis.range[1]']
+
+            y_tit = figure["layout"]["yaxis"]['title']['text']
+            y_min = relayoutData['yaxis.range[0]']
+            y_max = relayoutData['yaxis.range[1]']
+        else:
+            x_tit = figure["layout"]["xaxis"]['title']['text']
+            x_min = figure["layout"]["xaxis"]['range'][0]
+            x_max = figure["layout"]["xaxis"]['range'][1]
+            
+            y_tit = figure["layout"]["yaxis"]['title']['text']
+            y_min = figure["layout"]["yaxis"]['range'][0]
+            y_max = figure["layout"]["yaxis"]['range'][1]
+
+        p = f'''
+        * {x_tit}
+          * {x_min}
+          * {x_max}
+        * {y_tit}
+          * {y_min}
+          * {y_max}
+        '''
+                       
+        return p
+
+    # callback for zoomed doints
+    @app.callback(
+        Output('printstore', 'children'),
+        Input('memory', 'data')
+    )
+    def printstore(store):
+        print("called:", inspect.stack()[0][3]) if DEBUG_PRINT_CALLBACK else None
+
+        p = ""
+        for key,value in store.items():
+            p += f"* {key}:{value}\n"
+        return p
+
+    # callback for updating store
+    @app.callback(
+        Output('memory', 'data'),
+        [
+            Input('update-button', 'n_clicks'),
+            Input('database-dropdown', 'value'),
+        ],
+        [
+            State('memory', 'data'),
+            State('query-input', 'value'),
+            State('x-dropdown', 'value'),
+            State('y-dropdown', 'value')
+        ]
+
+    )
+    def update_store(nr_of_clicks, database, store, query, x, y):
+        print("called:", inspect.stack()[0][3]) if DEBUG_PRINT_CALLBACK else None
+
+        if database == None:
+            raise PreventUpdate
+
+        database = database.split(' ')[0] 
+
+        store['database'] = database
+        store['x'] = x
+        store['y'] = y
+        store['query'] = query
+        store['argv'] = get_argv(store['directory'], database)
+        store['start_time'] = get_start_time(store['directory'], database)
+
+        return store
+
+    # callback for argv string
+    @app.callback(
+        Output('argv', 'children'),
+        Input('memory', 'data')
+    )
+    def update_argv(store):
+        print("called:", inspect.stack()[0][3]) if DEBUG_PRINT_CALLBACK else None
+        return store['argv']
 
     # callback for database list
     @app.callback(
-        Output("graph-dropdown", "options"),
-        Input('update-button', 'n_clicks')
+        Output("database-dropdown", "options"),
+        [
+            Input("database-dropdown", "options"),
+        ]
     )
-    def update_dropdown(n_clicks):
-        return get_databases(DATABASE_DIRECTORY)
+    def update_dropdown_database(databases):
+        print("called:", inspect.stack()[0][3]) if DEBUG_PRINT_CALLBACK else None
+        return get_databases(args.directory)
+
+    # callback for x list
+    @app.callback(
+        Output("x-dropdown", "options"),
+        [
+            Input('update-button', 'n_clicks'),
+            Input('memory', 'data')
+        ]
+    )
+    def update_dropdown_x(n_clicks, store):
+        print("called:", inspect.stack()[0][3]) if DEBUG_PRINT_CALLBACK else None
+
+        if 'database' not in store or store['database'] == None:
+            raise PreventUpdate
+        return get_parameters(args.directory, store['database'])
+
+    # callback for y list
+    @app.callback(
+        Output("y-dropdown", "options"),
+        [
+            Input('update-button', 'n_clicks'),
+            Input('memory', 'data')
+        ]
+    )
+    def update_dropdown_y(n_clicks, store):
+        print("called:", inspect.stack()[0][3]) if DEBUG_PRINT_CALLBACK else None
+
+        if 'database' not in store or store['database'] == None:
+            raise PreventUpdate
+        return get_parameters(args.directory, store['database'])
 
     def percentage(val=None,total=None):
         return "{:.1%}".format(0.1234)
@@ -177,238 +317,332 @@ def run(directory, port, debug=False):
         else:
             return False
 
-    def recolor(regex, response):
-        if regex == None or len(regex) == 0:
-            return False
-        elif re.search(regex.encode(), response):
+    def recolor(record, regex, new_color):
+        if regex in [None, '']:
+            return record['color']
+        elif re.search(regex.encode(), record['response']):
+            return new_color
+        else:
+            return record['color']
+
+    def glitch_parameter_present(record, parameter):
+        if parameter in record and record[parameter] not in [0, None]:
             return True
         else:
             return False
 
-    # callback for database selection  
+    def combine_data(records, colorchecklist):
+        record_has_length = False
+        record_has_power = glitch_parameter_present(records[0], 'power')
+
+        combined_records = {}
+        for record in records:
+
+            if record['color'] not in colorchecklist:
+                continue
+
+            # decode response to string
+            response_hex = record['response'].hex(' ')
+            response = record['response'].decode('utf-8', errors='replace')
+
+            if response in combined_records:
+                combined_records[response]['amount'] += 1
+                
+                if record['delay'] < combined_records[response]['delayMin']:
+                    combined_records[response]['delayMin'] = record['delay']
+                if record['delay'] > combined_records[response]['delayMax']:
+                    combined_records[response]['delayMax'] = record['delay']
+                
+                if record_has_length: 
+                    if record['length'] < combined_records[response]['lengthMin']:
+                        combined_records[response]['lengthMin'] = record['length']
+                    if record['length'] > combined_records[response]['lengthMax']:
+                        combined_records[response]['lengthMax'] = record['length']                
+                
+                if record_has_power:
+                    if record['power'] < combined_records[response]['powerMin']:
+                        combined_records[response]['powerMin'] = record['power']
+                    if record['power'] > combined_records[response]['powerMax']:
+                        combined_records[response]['powerMax'] = record['power']                
+
+            else:
+                combined_records[response] = {}
+                combined_records[response]['amount'] = 1
+                combined_records[response]['color'] = record['color']
+                combined_records[response]['delayMin'] = record['delay']
+                combined_records[response]['delayMax'] = record['delay']
+                if record_has_length:
+                    combined_records[response]['lengthMin'] = record['length']
+                    combined_records[response]['lengthMax'] = record['length']
+                if record_has_power:
+                    combined_records[response]['powerMin'] = record['power']
+                    combined_records[response]['powerMax'] = record['power']
+                combined_records[response]['response'] = response
+                combined_records[response]['response_hex'] = response_hex
+
+        # sort new list based on occurrences 
+        combined_records = sorted(list(combined_records.values()), key=itemgetter('amount'), reverse=True)
+
+        columns_fixed = ['amount', 'color'] 
+        columns_variable_parameters = ['delayMin', 'delayMax']
+        if record_has_length:
+            columns_variable_parameters += ['lengthMin', 'lengthMax']
+        if record_has_power:
+            columns_variable_parameters += ['powerMin', 'powerMax']
+        columns = columns_fixed + columns_variable_parameters + ['response', 'response_hex']
+            
+        return combined_records,columns
+
+    def combine_data_no(records, colorchecklist):
+        # check if keys exist in record
+        record_has_length = glitch_parameter_present(records[0], 'length')
+        record_has_power = glitch_parameter_present(records[0], 'power')
+
+        all_records = []
+
+        for record in records:
+            if record['color'] not in colorchecklist:
+                continue
+            
+            new_record = {}
+            new_record['id'] = record['id']
+            new_record['color'] = record['color']
+            new_record['delay'] = record['delay']
+            
+            if record_has_length:
+                new_record['length'] = record['length']
+            
+            if record_has_power:
+                new_record['power'] = record['power']
+            
+            new_record['rlen'] = len(record['response'])
+            new_record['response'] = record['response'].decode('utf-8', errors='replace')
+            new_record['response_hex'] = record['response'].hex(' ')
+            all_records.append(new_record)
+
+        columns_fixed = ['id', 'color', 'delay']
+        columns_variable_parameters = []
+        if record_has_length:
+            columns_variable_parameters += ['length']
+        if record_has_power:
+            columns_variable_parameters += ['power']
+        columns = columns_fixed + columns_variable_parameters + ['rlen', 'response','response_hex']
+
+        return all_records,columns
+
+    def give_xy_label(parameter):
+        if parameter in ['length', 'delay']:
+            return '(ns)'
+        elif parameter == 'power':
+            return '(%)'
+        elif parameter in ['x','y']:
+            return ''
+        else:
+            return ''
+
+    # callback graph; chained from update_store()
     @app.callback(
         Output('graph','figure'),
-        Output('data','children'),
-        Input('update-button', 'n_clicks'),
-        Input('graph-dropdown', 'value'),
-        State('query-input', 'value'),
-        State('recolor-green', 'value'),
-        State('recolor-green-label', 'value'),
-        State('recolor-yellow', 'value'),
-        State('recolor-yellow-label', 'value'),
-        State('recolor-magenta', 'value'),
-        State('recolor-magenta-label', 'value'),
-        State('recolor-orange', 'value'),
-        State('recolor-orange-label', 'value'),
-        State('recolor-cyan', 'value'),
-        State('recolor-cyan-label', 'value'),
-        State('recolor-blue', 'value'),
-        State('recolor-blue-label', 'value'),
-        State('recolor-black', 'value'),
-        State('recolor-black-label', 'value'),
-        State('recolor-red', 'value'),
-        State('recolor-red-label', 'value'),
-        State('combine-data', 'value')
+        [
+            Input('memory', 'data'),
+            Input('x-dropdown', 'value'),
+            Input('y-dropdown', 'value'),
+        ],
+        [
+            State('recolor-green', 'value'),
+            State('recolor-green-label', 'value'),
+            State('recolor-yellow', 'value'),
+            State('recolor-yellow-label', 'value'),
+            State('recolor-magenta', 'value'),
+            State('recolor-magenta-label', 'value'),
+            State('recolor-orange', 'value'),
+            State('recolor-orange-label', 'value'),
+            State('recolor-cyan', 'value'),
+            State('recolor-cyan-label', 'value'),
+            State('recolor-blue', 'value'),
+            State('recolor-blue-label', 'value'),
+            State('recolor-black', 'value'),
+            State('recolor-black-label', 'value'),
+            State('recolor-red', 'value'),
+            State('recolor-red-label', 'value'),
+        ]
     )
-    def update_graph(nr_of_clicks, database, query, green, greenlabel, yellow, yellowlabel, magenta, magentalabel, orange, orangelabel, cyan, cyanlabel, blue, bluelabel, black, blacklabel, red, redlabel, combine):
+    def update_graph(store, x, y, green, greenlabel, yellow, yellowlabel, magenta, magentalabel, orange, orangelabel, cyan, cyanlabel, blue, bluelabel, black, blacklabel, red, redlabel):
+        print("called:", inspect.stack()[0][3]) if DEBUG_PRINT_CALLBACK else None
+
         if debug:
             now = round(time.time() * 1000)
-        
+
         # update databse 
-        if not database:
+        if x == None or y == None:
             raise PreventUpdate
-        
-        database = database.split(' ')[0]
 
-        # copy database to /tmp and opening it
-        print(f"Copying {database} to /tmp and opening from there")
-        shutil.copyfile(f"{DATABASE_DIRECTORY}/{database}", f"/tmp/{database}")
-        con = sqlite3.connect(f"file:/tmp/{database}?mode=ro", uri=True)
+        if 'database' not in store:
+            raise PreventUpdate
 
+        # remove number of experiments from database name
+        database = store['database']
+
+        if not os.path.isfile(f"{args.directory}/{database}"):
+            raise PreventUpdate
+
+        con = sqlite3.connect(f"{args.directory}/{database}")
+
+        # add some functions to sqlite
         con.create_function('match_string', 2, match_string)
         con.create_function('match_hex', 2, match_hex)
 
-        # updating metadata from database
-        update_metadata(DATABASE_DIRECTORY, database)
-
         # perform the query based on the query extension
-        if query != None and query != '':
-            query = f'SELECT * FROM experiments WHERE %s;' %(query)
+        if 'query' in store and  store['query'] not in [None, '']:
+            query = f'SELECT * FROM experiments WHERE %s;' %(store['query'])
         else:
             query = f'SELECT * FROM experiments;'
 
         # read stuff from database
-        df = pd.read_sql(query, con)
-        con.close()
+        try:
+            df = pd.read_sql(query, con)
+            con.close()
+        except:
+            raise PreventUpdate
+
+        # convert to numpy array for faster processing
+        records = df.to_dict('records')
+
+        # color amounts
+        colors = { 'P':0,'G':0,'Y':0,'M':0,'O':0,'C':0,'B':0,'Z':0,'R':0 }
 
         # recolor if needed
-        records = df.to_dict('records')
         for record in records:
-            if recolor(green, record['response']):
-                record['color'] = 'G'
-            elif recolor(yellow, record['response']):
-                record['color'] = 'Y'
-            elif recolor(magenta, record['response']):
-                record['color'] = 'M'
-            elif recolor(orange, record['response']):
-                record['color'] = 'O'
-            elif recolor(cyan, record['response']):
-                record['color'] = 'C'
-            elif recolor(blue, record['response']):
-                record['color'] = 'B'
-            elif recolor(black, record['response']):
-                record['color'] = 'Z'
-            elif recolor(red, record['response']):
-                record['color'] = 'R'
+            record['color'] = recolor(record, green, 'G')
+            record['color'] = recolor(record, yellow, 'Y')
+            record['color'] = recolor(record, magenta, 'M')
+            record['color'] = recolor(record, orange, 'O')
+            record['color'] = recolor(record, cyan, 'C')
+            record['color'] = recolor(record, blue, 'B')
+            record['color'] = recolor(record, black, 'Z')
+            record['color'] = recolor(record, red, 'R')
+            colors[record['color']] += 1
         
-        # create new DataFrame of recolored data
-        df = pd.DataFrame.from_dict(records)
+        # store records to store
+        store['records'] = records
 
         # get amount of experiments
-        nr_of_current_experiments = len(df) 
+        nr_of_current_experiments = len(records) 
 
         # output plot
-        fig = px.scatter(
-            df,
-            x = "delay", 
-            y = "length",
-            render_mode = "webgl",
-            color = "color", 
-            labels = {"color":f"Classification ({nr_of_current_experiments:,})",'delay':'delay (ns)','length':'length (ns)'},
-            color_discrete_map = { 
-                "G": "green",
-                "Y": "yellow", 
-                "M" : "magenta", 
-                "O": "orange",
-                "C": "cyan",
-                "B": "blue",
-                "Z": "black",
-                "R": "red", 
-            },
-            category_orders = {
-                "color" : ["G","Y","M","O","C","B","R"]
-            }
-        )
+        try:
+            fig = px.scatter(
+                records,
+                x = x, 
+                y = y,
+                render_mode = "webgl",
+                color = "color", 
+                labels = {
+                    'color': f'Classification ({nr_of_current_experiments:,})',
+                    x: f'{x} {give_xy_label(x)}',
+                    y: f'{y} {give_xy_label(y)}'
+                },
+                color_discrete_map = { 
+                    "P": "pink",
+                    "G": "green",
+                    "Y": "yellow", 
+                    "M" : "magenta", 
+                    "O": "orange",
+                    "C": "cyan",
+                    "B": "blue",
+                    "Z": "black",
+                    "R": "red"
+                },
+                category_orders = {
+                    "color" : ["P", "G","Y","M","O","C","B","Z","R"]
+                }
+            )
+        except:
+            raise PreventUpdate
 
-        # compute elapsed time
-        # elapsed_time_in_seconds = int(time.time()-get_start_time(DATABASE_DIRECTORY, database))
-        # elapsed_time = datetime.timedelta(seconds=elapsed_time_in_seconds)
-        # nr_of_experiments_per_second = nr_of_current_experiments // elapsed_time_in_seconds
-        
         # update title of graph
-        # fig.update_layout(title_text=f"{database[:-7]} (running for {elapsed_time} @ {nr_of_experiments_per_second} per second)\n", title_x=0.5)
-        fig.update_layout(title_text=f"{database[:-7]}", title_x=0.5)
+        fig.update_layout(
+            title_text=f"{database[:-7]}", 
+            title_x=0.5, 
+            title_y=0.95)
 
-        # update labels in legenda
-        def make_label(color, label, df):
-            count = len(df.query(f"color == '{color}'"))
-            if count > 0:
-                percentage = "{:.1%}".format(count/len(df))
-            else:
-                percentage = "{:.1%}".format(0)
+        if x == 'x' or y == 'y':
+            
+            fig.update_xaxes(
+                title_standoff = 0,
+                side='top'
+            )
+
+            fig.update_yaxes(
+                title_standoff = 0,
+                autorange='reversed'
+            )
+
+        def make_label(color, colors, label, nr_of_current_experiments):
+            count = colors[color]
+            percentage = "{:.1%}".format(count/nr_of_current_experiments)
             return { color: f'{label} ( {count} / {percentage} )'}
 
         labels = {}
-        labels.update(make_label('G', greenlabel, df))
-        labels.update(make_label('Y', yellowlabel, df))
-        labels.update(make_label('M', magentalabel, df))
-        labels.update(make_label('O', orangelabel, df))
-        labels.update(make_label('C', cyanlabel, df))
-        labels.update(make_label('B', bluelabel, df))
-        labels.update(make_label('Z', blacklabel, df))
-        labels.update(make_label('R', redlabel, df))
+        labels.update(make_label('P', colors, 'timeout', nr_of_current_experiments))
+        labels.update(make_label('G', colors, greenlabel, nr_of_current_experiments))
+        labels.update(make_label('Y', colors, yellowlabel, nr_of_current_experiments))
+        labels.update(make_label('M', colors, magentalabel, nr_of_current_experiments))
+        labels.update(make_label('O', colors, orangelabel, nr_of_current_experiments))
+        labels.update(make_label('C', colors, cyanlabel, nr_of_current_experiments))
+        labels.update(make_label('B', colors, bluelabel, nr_of_current_experiments))
+        labels.update(make_label('Z', colors, blacklabel, nr_of_current_experiments))
+        labels.update(make_label('R', colors, redlabel, nr_of_current_experiments))
         update_legend_labels(fig, labels)
 
-        # output data
-        records = df.to_dict('records')
+        if debug:
+            done = round(time.time() * 1000)
+            print('It took %d miliseconds to generate the graph' %(done - now))
 
-        delay_min = delay_max = length_min = length_max = 0
+        return fig
 
-        # TODO: rewrite this code
-        if combine == 'Yes':
+    # callback data; chained from update_graph()
+    @app.callback(
+        Output('data','children'),
+        [
+            Input('memory', 'data'),
+            Input('graph','figure'),
+        ],
+        [
+            State('combine-data', 'value'),
+            State('colorchecklist', 'value')
+        ],
+        prevent_initial_call=True
+    )
+    def update_data(store, figure, combine, colorchecklist):
+        if figure == None:
+            raise PreventUpdate
 
-            combined_records = []
-            for record in records:
+        if 'records' not in store:
+            raise PreventUpdate
 
-                # decode response to make sure it's compatible with json
-                response_hex = record['response'].hex(' ')
-                response = record['response'].decode('utf-8', errors='replace')
+        if debug:
+            now = round(time.time() * 1000)
 
-                # search for response that's already there
-                for index in range(len(combined_records)):
-                    if combined_records[index]['response'] == response:
-                        combined_records[index]['amount'] += 1
-                        
-                        if record['delay'] < combined_records[index]['delayMin']:
-                            combined_records[index]['delayMin'] = record['delay']
+        # load records from store
+        records = store['records']
 
-                        if record['delay'] > combined_records[index]['delayMax']:
-                            combined_records[index]['delayMax'] = record['delay']
-
-                        if record['length'] < combined_records[index]['lengthMin']:
-                            combined_records[index]['lengthMin'] = record['length']
-
-                        if record['length'] > combined_records[index]['lengthMax']:
-                            combined_records[index]['lengthMax'] = record['length']
-                        break
-                else:
-      
-
-                    delay_min = delay_max = record['delay']
-                    length_min = length_max = record['length']
-
-                    combined_records.append({'amount': 1, 'color': record['color'], 'delayMin': delay_min, 'delayMax': delay_max, 'lengthMin': length_min, 'lengthMax': length_max, 'response': response, 'response_hex': response_hex})
-
-            # sort new list based on occurrences 
-            combined_records = sorted(combined_records, key=itemgetter('amount'), reverse=True)
-
-            columns = ['amount', 'color', 'delayMin', 'delayMax', 'lengthMin', 'lengthMax', 'response', 'response_hex' ]
-
-            cell_style = [
-                {'if': {'column_id': 'amount'},     'textAlign': 'center','width':'100px'},
-                {'if': {'column_id': 'color'},      'textAlign': 'center','width':'100px'},
-                {'if': {'column_id': 'delayMin'},   'textAlign': 'center','width':'100px'},
-                {'if': {'column_id': 'delayMax'},   'textAlign': 'center','width':'100px'},
-                {'if': {'column_id': 'lengthMin'},  'textAlign': 'center','width':'100px'},
-                {'if': {'column_id': 'lengthMax'},  'textAlign': 'center','width':'100px'},
-                {'if': {'column_id': 'response'},   'textAlign': 'left'},
-                {'if': {'column_id': 'response_hex'},     'textAlign': 'left'}
-            ]
-
-            nr_of_fixed_columns = 6
-
-            records = combined_records
- 
+        # check if data should be combined
+        if combine == 'Combine data':
+            records,columns = combine_data(records, colorchecklist)
         else:
-            columns = ['id', 'color', 'delay', 'length', 'rlen', 'response','response_hex']
+            records,columns = combine_data_no(records, colorchecklist)
 
-            all_records = []
-
-            for record in records:
-                new_record = {}
-                new_record['id'] = record['id']
-                new_record['delay'] = record['delay']
-                new_record['length'] = record['length']
-                new_record['color'] = record['color']
-                new_record['rlen'] = len(record['response'])
-                new_record['response'] = record['response'].decode('utf-8', errors='replace')
-                new_record['response_hex'] = record['response'].hex(' ')
-                all_records.append(new_record)
-
-            cell_style = [
-                {'if': {'column_id': 'id'},         'textAlign': 'center','width':'100px', 'minWidth':'100px'},
-                {'if': {'column_id': 'delay'},      'textAlign': 'center','width':'100px', 'minWidth':'100px'},
-                {'if': {'column_id': 'length'},     'textAlign': 'center','width':'100px', 'minWidth':'100px'},
-                {'if': {'column_id': 'color'},      'textAlign': 'center','width':'100px', 'minWidth':'100px'},
-                {'if': {'column_id': 'rlen'},     'textAlign': 'center','width':'100px', 'minWidth':'100px'},
-                {'if': {'column_id': 'response'},   'textAlign': 'left'},
-                {'if': {'column_id': 'response_hex'},     'textAlign': 'left'},
-            ]
-
-            nr_of_fixed_columns = 5
-            records = all_records
+        # cell style
+        cell_style = []
+        for column in columns:
+            if column not in ['response', 'response_hex']:
+                cell_style.append({'if': {'column_id': column},'textAlign': 'center','width':'100px'})
+            else:
+                cell_style.append({'if': {'column_id': column},'textAlign': 'left'})
 
         data_style = [
+            {'if': {'filter_query': '{color} = P'},'backgroundColor': 'pink','color': 'black'},
             {'if': {'filter_query': '{color} = G'},'backgroundColor': 'green','color': 'white'},
             {'if': {'filter_query': '{color} = Y'},'backgroundColor': 'yellow','color': 'black'},
             {'if': {'filter_query': '{color} = M'},'backgroundColor': 'magenta','color': 'white'},
@@ -426,8 +660,8 @@ def run(directory, port, debug=False):
             filter_action='native',
             sort_action="native",
             page_action='native',
-            page_size=30,
-            fixed_columns={'headers': True, 'data': nr_of_fixed_columns},
+            page_size=20,
+            fixed_columns={'headers': True, 'data': len(columns)-2},
             style_table={'overflowX': 'auto','minWidth':'100%'},
             style_cell_conditional=cell_style,
             style_data_conditional=data_style
@@ -435,15 +669,15 @@ def run(directory, port, debug=False):
 
         if debug:
             done = round(time.time() * 1000)
-            print('It took %d miliseconds to generate this data.' %(done - now))
+            print('It took %d miliseconds to generate the data' %(done - now))
 
-        return fig,data
+        return data
 
     # start server on localhost
     app.run_server(host='127.0.0.1', port=port, debug=True)
 
 if __name__ == "__main__":
-    __version__ = "0.1"
+    __version__ = "1.0"
 
     parser = argparse.ArgumentParser(
         description="analyzer.py v%s - Raelize Glitch Analyzer" % __version__,
@@ -451,7 +685,9 @@ if __name__ == "__main__":
     ) 
     parser.add_argument("--directory",help="Database directory", required=True)
     parser.add_argument("--port",help="Server port")
+    parser.add_argument("--x", required=False, help="Preset the x parameter")
+    parser.add_argument("--y", required=False, help="Preset the y parameter")
 
     args = parser.parse_args()
-    run(args.directory,args.port,debug=True)
 
+    run(args,debug=True)
