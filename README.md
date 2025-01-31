@@ -22,3 +22,12 @@ $ ./taofi-analyzer
 usage: analyzer [-h] --directory DIRECTORY [--port PORT] [--x X] [--y Y] [--remote]
 analyzer: error: the following arguments are required: --directory
 ```
+
+For better performance you can use `gunicorn` instead of the built-in server:
+
+```bash
+$ python -m venv .venv
+$ source .venv/bin/activate
+$ pip install -r requirements.txt
+$ ANALYZER_DIRECTORY=<DIRECTORY> gunicorn taofi-analyzer:server
+```
