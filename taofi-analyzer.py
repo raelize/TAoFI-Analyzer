@@ -246,6 +246,16 @@ def update_global_records(config):
     # store records from global
     _RECORDS = df.to_dict('records')
 
+def database_exists(directory, database):
+    if directory == None or database == None:
+        return False
+
+    database_path = os.path.join(directory, database)
+    if os.path.exists(database_path):
+        return True
+    else:
+        return False
+
 #
 # Callbacks
 # 
@@ -291,16 +301,16 @@ def register_callbacks(app):
                        
         return p
 
-    # callback for exporting config
-    @app.callback(
-       Output('download_data', 'data'),
-       Input('config-export-button', 'n_clicks'),
-       State('config-store', 'data'),
-       prevent_initial_call=True
-    )
-    def download(n_clicks,store):
-       config = AnalyzerConfig(**store)
-       return dict(content=config.to_json(), filename="config.json")
+    # # callback for saving config
+    # @app.callback(
+    #    Output('download_data', 'data'),
+    #    Input('save-config-button', 'n_clicks'),
+    #    State('config-store', 'data'),
+    #    prevent_initial_call=True
+    # )
+    # def download(n_clicks,store):
+    #    config = AnalyzerConfig(**store)
+    #    return dict(content=config.to_json(), filename="config.json")
 
     # callback for printing store at the bottom
     @app.callback(
@@ -329,35 +339,48 @@ def register_callbacks(app):
         Output("y-dropdown", "value"),        
         [
             Input('update-button', 'n_clicks'),
-            Input('upload_data', 'contents'),
+            # Input('load_config', 'contents'),
             Input('query-input', 'value'),
             Input('database-dropdown', 'value'),
             Input('x-dropdown', 'value'),
             Input('y-dropdown', 'value')
         ],
-        [
-            State('config-store', 'data'),
-        ]
+        State('config-store', 'data'),
+        [State(f'recolor-{color}', 'value') for color in _COLORS] + [State(f'recolor-{color}-label', 'value') for color in _COLORS],
     )
-    def update_store(nr_of_clicks, contents, query, database, x, y, store):
-        if ctx.triggered_id == 'upload_data':
-            if contents:
-                content_type, content_string = contents.split(',')
-                config_dict = json.loads(base64.b64decode(content_string))
-                config = AnalyzerConfig(**config_dict)
-                update_global_records(config)
-                return config_dict,config.database,config.x,config.y
+    # def update_store(nr_of_clicks, contents, query, database, x, y, store, *color_states):
+    def update_store(nr_of_clicks, query, database, x, y, store, *color_states):
+        # if ctx.triggered_id == 'load_config':
+        #     if contents:
+        #         content_type, content_string = contents.split(',')
+        #         config_dict = json.loads(base64.b64decode(content_string))
+        #         config = AnalyzerConfig(**config_dict)
+        #         update_global_records(config)
+        #         return config_dict,config.database,config.x,config.y
 
         if database == None:
             raise PreventUpdate
 
-        database = database.split(' ')[0] 
         config = AnalyzerConfig(**store)
+
+        # check if database exists
+        if database_exists(config.directory, database) == False:
+            print("database does not exist")
+            raise PreventUpdate
+
+        # remove number of arguments
+        database = database.split(' ')[0] 
+        
         config.database = database
         config.x = x
         config.y = y
         config.query = query
         config.argv = get_argv(config.directory, config.database)
+
+        # Update color in config
+        for color, regex, label in zip(_COLORS, color_states[:8], color_states[8:]):
+            config.colors[color] = [regex, label]
+
         return asdict(config),config.database,config.x,config.y
 
     # callback for printing the argv string at the bottom
@@ -379,7 +402,10 @@ def register_callbacks(app):
     )
     def update_dropdown_x(database, store):
         config = AnalyzerConfig(**store)
-        return get_parameters(config.directory, database)
+        if database_exists(config.directory, database):
+            return get_parameters(config.directory, database)
+        else:
+            raise PreventUpdate
 
     # callback for y list
     @app.callback(
@@ -390,7 +416,10 @@ def register_callbacks(app):
     )
     def update_dropdown_y(database, store):
         config = AnalyzerConfig(**store)
-        return get_parameters(config.directory, database)
+        if database_exists(config.directory, database):
+            return get_parameters(config.directory, database)
+        else:
+            raise PreventUpdate
 
     # callback graph; chained from update_store()
     @app.callback(
@@ -404,10 +433,26 @@ def register_callbacks(app):
         global _RECORDS
 
         config = AnalyzerConfig(**store)
-
         if ctx.triggered_id == 'config-store':
+
+            # update x and y
             x = config.x
             y = config.y
+
+            # update color states according to config
+            # color_values = []
+            # for color in config.colors:
+            #     color_value = config.colors[color][0]
+            #     color_values.append(color_value)
+            # print(color_values)
+            
+            # color_labels = []
+            # for color in config.colors:
+            #     color_label = config.colors[color][1]
+            #     color_labels.append(color_label)
+        
+        color_values = color_states[:8]
+        color_labels = color_states[8:]
 
         # prevent update
         if any(v is None for v in [x, y]):
@@ -417,9 +462,6 @@ def register_callbacks(app):
 
         # color amounts
         colors = { 'P':0,'G':0,'Y':0,'M':0,'O':0,'C':0,'B':0,'Z':0,'R':0 }
-
-        color_values = color_states[:8]
-        color_labels = color_states[8:]
 
         color_map = dict(zip(_COLORS,['G', 'Y', 'M', 'O', 'C', 'B', 'Z', 'R']))
 
@@ -615,14 +657,14 @@ def create_layout(app):
                         ]),
                         dcc.Input(id='query-input', type="text", list='examples', value='', style={'width':'100%','display': 'inline-block'}, placeholder=f"SELECT * FROM experiments WHERE"),
                     
-                        dcc.Upload(
-                            id="upload_data",
-                            children=html.Button(f"Import", style={'width':'100px'}),
-                            multiple=False,
-                        ),
-                
-                        html.Button(f"Export", id='config-export-button',  style={'width':'100px', 'display': 'inline-block'}),
-                        dcc.Download(id="download_data")
+                        # dcc.Upload(
+                        #     id="load_config",
+                        #     children=html.Button(f"Load", style={'width':'100px'}),
+                        #     multiple=False,
+                        # ),
+                        # html.Button(f"Save", id='save-config-button',  style={'width':'100px', 'display': 'inline-block'}),
+                        # dcc.Download(id="download_data")
+
                     ], style={'display': 'flex', 'alignItems': 'center'})
                 ])
             ),
@@ -664,7 +706,7 @@ def create_layout(app):
                 dbc.CardBody([                
                     dbc.Switch(
                         id='switch-squeezedata', 
-                        value=False,
+                        value=True,
                         label='Squeeze Data',
                         style={'display': 'inline-block', 'marginRight': '20px'}
                     ),
@@ -725,7 +767,7 @@ if __name__ == "__main__":
         prog="analyzer"
     ) 
     parser.add_argument("--ip",help="Server port", type=str, default="127.0.0.1")
-    parser.add_argument("--port",help="Server port", type=int, default=8080)
+    parser.add_argument("--port",help="Server port", type=int, default=8000)
     parser.add_argument("--directory",help="Database directorys", required=True)
     parser.add_argument("--x", required=False, help="Preset the x parameter")
     parser.add_argument("--y", required=False, help="Preset the y parameter")
@@ -741,7 +783,7 @@ if __name__ == "__main__":
     register_callbacks(app)
     create_layout(app)
 
-    app.run_server(host=_config.serverip, port=_config.serverport, debug=True)
+    app.run(host=_config.serverip, port=_config.serverport, debug=True)
 else:
     # this path is taken when started with e.g. unicorn
     check_env()
