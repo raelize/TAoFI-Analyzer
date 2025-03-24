@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import plotly.express as px
 import pandas as pd
@@ -314,6 +313,14 @@ def register_callbacks(app):
             p += f"* {key}:{value}\n"
         return p
 
+    # callback for updating database list after clickin the button
+    @app.callback(
+        Output("database-dropdown", "options"),
+        Input('update-button', 'n_clicks'),
+    )
+    def update_database_list(nr_of_clicks):
+        return get_databases(_config.directory)
+
     # callback for updating store
     @app.callback(
         Output('config-store', 'data'),
@@ -384,9 +391,6 @@ def register_callbacks(app):
     def update_dropdown_y(database, store):
         config = AnalyzerConfig(**store)
         return get_parameters(config.directory, database)
-
-
-
 
     # callback graph; chained from update_store()
     @app.callback(
