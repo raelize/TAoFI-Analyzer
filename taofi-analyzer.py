@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import plotly.express as px
 import pandas as pd
@@ -340,16 +341,17 @@ def register_callbacks(app):
         [
             Input('update-button', 'n_clicks'),
             # Input('load_config', 'contents'),
-            Input('query-input', 'value'),
+            # Input('query-input', 'value'),
             Input('database-dropdown', 'value'),
             Input('x-dropdown', 'value'),
             Input('y-dropdown', 'value')
         ],
+        State('query-input', 'value'),
         State('config-store', 'data'),
         [State(f'recolor-{color}', 'value') for color in _COLORS] + [State(f'recolor-{color}-label', 'value') for color in _COLORS],
     )
     # def update_store(nr_of_clicks, contents, query, database, x, y, store, *color_states):
-    def update_store(nr_of_clicks, query, database, x, y, store, *color_states):
+    def update_store(nr_of_clicks, database, x, y, query, store, *color_states):
         # if ctx.triggered_id == 'load_config':
         #     if contents:
         #         content_type, content_string = contents.split(',')
@@ -517,11 +519,12 @@ def register_callbacks(app):
             Input('config-store', 'data'), 
             Input('graph', 'figure'),
             Input('switch-squeezedata', 'value'),
-            Input('switch-showhexdata', 'value')
+            Input('switch-showhexdata', 'value'),
+            Input('switch-wraptext', 'value')
         ],
         prevent_initial_call=True
     )
-    def update_data(store, figure, squeeze, showhex):
+    def update_data(store, figure, squeeze, showhex, wraptext):
         global _RECORDS
 
         if any(x is None for x in [figure, _RECORDS]):
@@ -555,11 +558,22 @@ def register_callbacks(app):
                     'pinned': 'left'
                 })                
             elif column in ['response']:
-                configs.append({
-                    'autoSize':False,
-                    'width': 500,
-                    'flex': 1
-                })
+
+                if wraptext:
+                    configs.append({
+                        'autoSize':True,
+                        'width': 500,
+                        'flex': 1,
+                        'wrapText': True,
+                        'autoHeight': True                        
+                    })
+                else:
+                    configs.append({
+                        'autoSize':False,
+                        'width': 500,
+                        'flex': 1,
+
+                    })                    
             elif column in ['hex(response)']:
                 configs.append({
                     'autoSize':False,
@@ -620,9 +634,6 @@ def register_callbacks(app):
             className='ag-theme-quartz',
             getRowStyle=rowstyles,
             dashGridOptions= {
-                # 'groupHeaderHeight': 75,
-                # 'headerHeight': 150,
-                # 'floatingFiltersHeight': 40,
                 'pagination': True,
                 'animateRows': False
             },
@@ -714,6 +725,12 @@ def create_layout(app):
                         id='switch-showhexdata', 
                         value=False,
                         label='Show Hex',
+                        style={'display': 'inline-block','marginRight': '20px'}
+                    ),
+                    dbc.Switch(
+                        id='switch-wraptext', 
+                        value=False,
+                        label='Wrap Text',
                         style={'display': 'inline-block'}
                     ),
                     html.Div(id='data',style={'width':'100%', 'height':'100%', 'border-style':'none'}),
