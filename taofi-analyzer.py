@@ -563,15 +563,12 @@ def register_callbacks(app):
                     configs.append({
                         'autoSize':True,
                         'width': 500,
-                        'flex': 1,
                         'wrapText': True,
-                        'autoHeight': True                        
+                        'autoHeight': True                     
                     })
                 else:
                     configs.append({
-                        'autoSize':False,
-                        'width': 500,
-                        'flex': 1,
+                        'autoSize':True,
 
                     })                    
             elif column in ['hex(response)']:
@@ -622,6 +619,11 @@ def register_callbacks(app):
             "defaultStyle": {"backgroundColor": "white", "color": "black"}
         }
 
+        if wraptext:
+            resize_strategy = { 'type': 'fitGridWidth' }
+        else:
+            resize_strategy = { 'type': 'fitCellContents' } 
+
         data = AgGrid(
             columnDefs=columnDefs,
             rowData=data,
@@ -635,7 +637,9 @@ def register_callbacks(app):
             getRowStyle=rowstyles,
             dashGridOptions= {
                 'pagination': True,
-                'animateRows': False
+                'animateRows': False,
+                'alwaysShowHorizontalScroll': True,
+                'autoSizeStrategy': resize_strategy
             },
             style={'height': '1000px'},
         )
