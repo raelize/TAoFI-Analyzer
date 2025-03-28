@@ -38,6 +38,7 @@ class AnalyzerConfig:
     database: str = None
     y: str = None
     x: str = None
+    jitter: int = 0
     argv: str = None
     database: str = None
     query: str = ''
@@ -244,6 +245,10 @@ def update_global_records(config):
     except:
         raise PreventUpdate
 
+    # add some noise
+    df[config.x] += np.random.normal(0, config.jitter, df.shape[0])
+    df[config.y] += np.random.normal(0, config.jitter, df.shape[0])
+
     # store records from global
     _RECORDS = df.to_dict('records')
 
@@ -344,14 +349,15 @@ def register_callbacks(app):
             # Input('query-input', 'value'),
             Input('database-dropdown', 'value'),
             Input('x-dropdown', 'value'),
-            Input('y-dropdown', 'value')
+            Input('y-dropdown', 'value'),
         ],
         State('query-input', 'value'),
         State('config-store', 'data'),
+        State("jitter-input", "value"),
         [State(f'recolor-{color}', 'value') for color in _COLORS] + [State(f'recolor-{color}-label', 'value') for color in _COLORS],
     )
     # def update_store(nr_of_clicks, contents, query, database, x, y, store, *color_states):
-    def update_store(nr_of_clicks, database, x, y, query, store, *color_states):
+    def update_store(nr_of_clicks, database, x, y, query, store, jitter, *color_states):
         # if ctx.triggered_id == 'load_config':
         #     if contents:
         #         content_type, content_string = contents.split(',')
@@ -376,6 +382,7 @@ def register_callbacks(app):
         config.database = database
         config.x = x
         config.y = y
+        config.jitter = jitter
         config.query = query
         config.argv = get_argv(config.directory, config.database)
 
@@ -435,6 +442,7 @@ def register_callbacks(app):
         global _RECORDS
 
         config = AnalyzerConfig(**store)
+
         if ctx.triggered_id == 'config-store':
 
             # update x and y
@@ -472,7 +480,7 @@ def register_callbacks(app):
            for value, color_code in zip(color_values, color_map.values()):
                record['color'] = recolor(record, value, color_code)
            colors[record['color']] += 1
-        
+
         # output plot
         try:
             fig = px.scatter(
@@ -493,6 +501,7 @@ def register_callbacks(app):
                 category_orders = {"color" : ["P", "G","Y","M","O","C","B","Z","R"]}
             )
         except:
+            print('hello')
             raise PreventUpdate
 
         # update title of graph
@@ -686,9 +695,14 @@ def create_layout(app):
 
             dbc.Card(
                 dbc.CardBody([
-                    dcc.Dropdown(id='database-dropdown', style={'width':'100%'}, options=get_databases(_config.directory)),
-                    dcc.Dropdown(id='x-dropdown', style={'width':'100%'}),
-                    dcc.Dropdown(id='y-dropdown', style={'width':'100%'})
+                    dcc.Dropdown(id='database-dropdown', style={'width':'100%'}, options=get_databases(_config.directory), placeholder="database"),
+                    html.Div([
+                        dcc.Dropdown(id='x-dropdown', style={'width':'100%'}, placeholder="x-axis"),
+                        dcc.Dropdown(id='y-dropdown', style={'width':'100%'}, placeholder="y-axis"),
+                        dcc.Input(id='jitter-input', type="number", value=0, style={'width':'100%'}),
+                    ], style=dict(display='flex')),
+                    
+                    
                 ])
             ),
             dbc.Card(
