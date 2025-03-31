@@ -162,6 +162,7 @@ def glitch_parameter_present(record, parameter):
 def generate_data(records, squeeze_records=False):
     has_length = glitch_parameter_present(records[0], 'length')
     has_power = glitch_parameter_present(records[0], 'power') 
+    has_voltage = glitch_parameter_present(records[0], 'voltage') 
 
     new_records = []
 
@@ -176,6 +177,8 @@ def generate_data(records, squeeze_records=False):
                 new_record['length'] = record['length']
             if has_power:
                 new_record['power'] = record['power']
+            if has_voltage:
+                new_record['voltage'] = record['voltage']
             new_record['rlen'] = len(record['response'])
             new_record['response'] = record['response'].decode('utf-8', errors='replace')            
             new_record['hex(response)'] = record['response'].hex(' ')
@@ -201,6 +204,9 @@ def generate_data(records, squeeze_records=False):
                 if has_power:
                     squeezed_records[response]['Min(Power)'] = record['power']
                     squeezed_records[response]['Max(Power)'] = record['power']
+                if has_voltage:
+                    squeezed_records[response]['Min(Voltage)'] = record['voltage']
+                    squeezed_records[response]['Max(Voltage)'] = record['voltage']
                 squeezed_records[response]['response'] = response
                 squeezed_records[response]['hex(response)'] = record['response'].hex(' ')
             else:
@@ -213,11 +219,14 @@ def generate_data(records, squeeze_records=False):
                 if has_power:
                     squeezed_records[response]['Min(Power)'] = min(squeezed_records[response]['Min(Power)'], record['power'])
                     squeezed_records[response]['Max(Power)'] = max(squeezed_records[response]['Max(Power)'], record['power'])
+                if has_voltage:
+                    squeezed_records[response]['Min(Voltage)'] = min(squeezed_records[response]['Min(Voltage)'], record['voltage'])
+                    squeezed_records[response]['Max(Voltage)'] = max(squeezed_records[response]['Max(Voltage)'], record['voltage'])
 
         return sorted(squeezed_records.values(), key=itemgetter('amount'), reverse=True)
 
 def give_xy_label(parameter):
-    labels = { 'length': '(ns)', 'delay': '(ns)', 'power': '(%)' }
+    labels = { 'length': '(ns)', 'delay': '(ns)', 'power': '(%)', 'voltage': '(v)' }
     return labels.get(parameter, '')
 
 def update_global_records(config):
@@ -307,17 +316,6 @@ def register_callbacks(app):
                        
         return p
 
-    # # callback for saving config
-    # @app.callback(
-    #    Output('download_data', 'data'),
-    #    Input('save-config-button', 'n_clicks'),
-    #    State('config-store', 'data'),
-    #    prevent_initial_call=True
-    # )
-    # def download(n_clicks,store):
-    #    config = AnalyzerConfig(**store)
-    #    return dict(content=config.to_json(), filename="config.json")
-
     # callback for printing store at the bottom
     @app.callback(
         Output('printstore', 'children'),
@@ -345,8 +343,6 @@ def register_callbacks(app):
         Output("y-dropdown", "value"),        
         [
             Input('update-button', 'n_clicks'),
-            # Input('load_config', 'contents'),
-            # Input('query-input', 'value'),
             Input('database-dropdown', 'value'),
             Input('x-dropdown', 'value'),
             Input('y-dropdown', 'value'),
@@ -358,14 +354,6 @@ def register_callbacks(app):
     )
     # def update_store(nr_of_clicks, contents, query, database, x, y, store, *color_states):
     def update_store(nr_of_clicks, database, x, y, query, store, jitter, *color_states):
-        # if ctx.triggered_id == 'load_config':
-        #     if contents:
-        #         content_type, content_string = contents.split(',')
-        #         config_dict = json.loads(base64.b64decode(content_string))
-        #         config = AnalyzerConfig(**config_dict)
-        #         update_global_records(config)
-        #         return config_dict,config.database,config.x,config.y
-
         if database == None:
             raise PreventUpdate
 
@@ -448,18 +436,6 @@ def register_callbacks(app):
             # update x and y
             x = config.x
             y = config.y
-
-            # update color states according to config
-            # color_values = []
-            # for color in config.colors:
-            #     color_value = config.colors[color][0]
-            #     color_values.append(color_value)
-            # print(color_values)
-            
-            # color_labels = []
-            # for color in config.colors:
-            #     color_label = config.colors[color][1]
-            #     color_labels.append(color_label)
         
         color_values = color_states[:8]
         color_labels = color_states[8:]
@@ -501,7 +477,6 @@ def register_callbacks(app):
                 category_orders = {"color" : ["P", "G","Y","M","O","C","B","Z","R"]}
             )
         except:
-            print('hello')
             raise PreventUpdate
 
         # update title of graph
@@ -680,15 +655,6 @@ def create_layout(app):
                             html.Option(value="length > 100"),
                         ]),
                         dcc.Input(id='query-input', type="text", list='examples', value='', style={'width':'100%','display': 'inline-block'}, placeholder=f"SELECT * FROM experiments WHERE"),
-                    
-                        # dcc.Upload(
-                        #     id="load_config",
-                        #     children=html.Button(f"Load", style={'width':'100px'}),
-                        #     multiple=False,
-                        # ),
-                        # html.Button(f"Save", id='save-config-button',  style={'width':'100px', 'display': 'inline-block'}),
-                        # dcc.Download(id="download_data")
-
                     ], style={'display': 'flex', 'alignItems': 'center'})
                 ])
             ),
