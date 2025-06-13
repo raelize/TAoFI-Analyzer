@@ -520,19 +520,19 @@ def register_callbacks(app):
             raise PreventUpdate
 
         # update title of graph
-        fig.update_layout(title_text=config.database[:-7], title_x=0.5, title_y=0.95, showlegend=False)
+        fig.update_layout(title_text=config.database[:-7], title_x=0.5, title_y=0.95)
 
         if config.x == 'x' or config.y == 'y':
             fig.update_xaxes(title_standoff=0, side='top')
             fig.update_yaxes(title_standoff=0, autorange='reversed')
 
         # Update legend labels
-        # labels = {}
-        # for color_code, label in zip(color_map.values(), color_labels):
-        #    count = colors[color_code]
-        #    labels[color_code] = f'{label} ( {count} / {count/len(_RECORDS):.1%} )'
-        # labels['P'] = f'timeout ( {colors["P"]} / {colors["P"]/len(_RECORDS):.1%} )'
-        # update_legend_labels(fig, labels)
+        labels = {}
+        for color_code, label in zip(color_map.values(), color_labels):
+           count = colors[color_code]
+           labels[color_code] = f'{label} ( {count} / {count/len(_RECORDS):.1%} )'
+        labels['P'] = f'timeout ( {colors["P"]} / {colors["P"]/len(_RECORDS):.1%} )'
+        update_legend_labels(fig, labels)
 
         return fig
 

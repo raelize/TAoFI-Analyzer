@@ -145,13 +145,45 @@ def match_hex(response, token):
     else:
         return False
 
-def recolor(record, regex, new_color):
+def recolor(record, regex, new_color, fixgreen):
     if regex in [None, '']:
+        return record['color']
+    if fixgreen and record['color'] == 'G':
         return record['color']
     elif re.search(regex.encode(), record['response']):
         return new_color
     else:
         return record['color']
+
+
+# def get_variable_names(record):
+#     variable_names['id'] = get_variable_name(record, ['id'])
+#     variable_names['color'] = get_variable_name(record, ['color'])
+#     variable_names['delay'] = get_variable_name(record, ['delay', 'glitch_delay'])
+#     variable_names['length'] = get_variable_name(record, ['length', 'glitch_length'])
+#     variable_names['voltage'] = get_variable_name(record, ['voltage', 'glitch_voltage'])
+#     variable_names['power'] = get_variable_name(record, ['power', 'glitch_power'])
+
+#     return variable_names
+
+class VariableNames():
+    def __init__(self, record):
+        self.id = self.get_variable_name(record, ['id'])
+        self.color = self.get_variable_name(record, ['color'])
+        self.normal = self.get_variable_name(record, ['normal','normal_voltage'])
+        self.delay = self.get_variable_name(record, ['delay', 'glitch_delay'])
+        self.length = self.get_variable_name(record, ['length', 'glitch_length'])
+        self.voltage = self.get_variable_name(record, ['voltage', 'glitch_voltage'])
+        self.power = self.get_variable_name(record, ['power', 'glitch_power'])
+        self.response = self.get_variable_name(record, ['response'])
+        self.reset = self.get_variable_name(record, ['reset'])
+
+    def get_variable_name(self, record, names):
+        for name in names:
+            if name in record:
+                return name
+        else:
+            return None
 
 def glitch_parameter_present(record, parameter):
     if parameter in record and record[parameter] not in [0, None]:
@@ -160,28 +192,35 @@ def glitch_parameter_present(record, parameter):
         return False
 
 def generate_data(records, squeeze_records=False):
-    has_length = glitch_parameter_present(records[0], 'length')
-    has_power = glitch_parameter_present(records[0], 'power') 
-    has_voltage = glitch_parameter_present(records[0], 'voltage') 
+    v = VariableNames(records[0])
 
-    new_records = []
+    has_normal = glitch_parameter_present(records[0], v.normal)
+    has_length = glitch_parameter_present(records[0], v.length)
+    has_power = glitch_parameter_present(records[0], v.power) 
+    has_voltage = glitch_parameter_present(records[0], v.voltage)
+    has_reset = glitch_parameter_present(records[0], v.reset)
 
     if not squeeze_records:
+        new_records = []
 
         for record in records:
             new_record = {}    
-            new_record['id'] = record['id']
-            new_record['color'] = record['color']
-            new_record['delay'] = record['delay']
+            new_record['id'] = record[v.id]
+            new_record['color'] = record[v.color]
+            new_record['delay'] = record[v.delay]
+            if has_normal:
+                new_record['normal'] = record[v.normal]
             if has_length:
-                new_record['length'] = record['length']
+                new_record['length'] = record[v.length]
             if has_power:
-                new_record['power'] = record['power']
+                new_record['power'] = record[v.power]
             if has_voltage:
-                new_record['voltage'] = record['voltage']
-            new_record['rlen'] = len(record['response'])
-            new_record['response'] = record['response'].decode('utf-8', errors='replace')            
-            new_record['hex(response)'] = record['response'].hex(' ')
+                new_record['voltage'] = record[v.voltage]
+            if has_reset:
+                new_record['reset'] = record[v.reset]
+            new_record['rlen'] = len(v.response)
+            new_record['response'] = record[v.response].decode('utf-8', errors='replace')            
+            new_record['hex(response)'] = record[v.response].hex(' ')
             new_records.append(new_record)
 
         return new_records
@@ -190,43 +229,63 @@ def generate_data(records, squeeze_records=False):
         squeezed_records = {}
         
         for record in records:
-            response = record['response'].decode('utf-8', errors='replace')
+            response = record[v.response].decode('utf-8', errors='replace')
             
             if response not in squeezed_records:
                 squeezed_records[response] = {}
                 squeezed_records[response]['amount'] = 1
-                squeezed_records[response]['color'] = record['color']
-                squeezed_records[response]['Min(Delay)'] = record['delay']
-                squeezed_records[response]['Max(Delay)'] = record['delay']
+                squeezed_records[response]['color'] = record[v.color]
+                squeezed_records[response]['Min(Delay)'] = record[v.delay]
+                squeezed_records[response]['Max(Delay)'] = record[v.delay]
+                if has_normal:
+                    squeezed_records[response]['Min(Normal)'] = record[v.normal]
+                    squeezed_records[response]['Max(Normal)'] = record[v.normal]
                 if has_length:
-                    squeezed_records[response]['Min(Length)'] = record['length']
-                    squeezed_records[response]['Max(Length)'] = record['length']
+                    squeezed_records[response]['Min(Length)'] = record[v.length]
+                    squeezed_records[response]['Max(Length)'] = record[v.length]
                 if has_power:
-                    squeezed_records[response]['Min(Power)'] = record['power']
-                    squeezed_records[response]['Max(Power)'] = record['power']
+                    squeezed_records[response]['Min(Power)'] = record[v.power]
+                    squeezed_records[response]['Max(Power)'] = record[v.power]
                 if has_voltage:
-                    squeezed_records[response]['Min(Voltage)'] = record['voltage']
-                    squeezed_records[response]['Max(Voltage)'] = record['voltage']
+                    squeezed_records[response]['Min(Voltage)'] = record[v.voltage]
+                    squeezed_records[response]['Max(Voltage)'] = record[v.voltage]
+                if has_reset:
+                    squeezed_records[response]['Min(Reset)'] = record[v.reset]
+                    squeezed_records[response]['Max(Reset)'] = record[v.reset]
+
                 squeezed_records[response]['response'] = response
-                squeezed_records[response]['hex(response)'] = record['response'].hex(' ')
+                squeezed_records[response]['hex(response)'] = record[v.response].hex(' ')
             else:
                 squeezed_records[response]['amount'] += 1
-                squeezed_records[response]['Min(Delay)'] = min(squeezed_records[response]['Min(Delay)'], record['delay'])
-                squeezed_records[response]['Max(Delay)'] = max(squeezed_records[response]['Max(Delay)'], record['delay'])
+                squeezed_records[response]['Min(Delay)'] = min(squeezed_records[response]['Min(Delay)'], record[v.delay])
+                squeezed_records[response]['Max(Delay)'] = max(squeezed_records[response]['Max(Delay)'], record[v.delay])
+                if has_normal:
+                    squeezed_records[response]['Min(Normal)'] = min(squeezed_records[response]['Min(Normal)'], record[v.normal])
+                    squeezed_records[response]['Max(Normal)'] = max(squeezed_records[response]['Max(Normal)'], record[v.normal])
                 if has_length:
-                    squeezed_records[response]['Min(Length)'] = min(squeezed_records[response]['Min(Length)'], record['length'])
-                    squeezed_records[response]['Max(Length)'] = max(squeezed_records[response]['Max(Length)'], record['length'])
+                    squeezed_records[response]['Min(Length)'] = min(squeezed_records[response]['Min(Length)'], record[v.length])
+                    squeezed_records[response]['Max(Length)'] = max(squeezed_records[response]['Max(Length)'], record[v.length])
                 if has_power:
-                    squeezed_records[response]['Min(Power)'] = min(squeezed_records[response]['Min(Power)'], record['power'])
-                    squeezed_records[response]['Max(Power)'] = max(squeezed_records[response]['Max(Power)'], record['power'])
+                    squeezed_records[response]['Min(Power)'] = min(squeezed_records[response]['Min(Power)'], record[v.power])
+                    squeezed_records[response]['Max(Power)'] = max(squeezed_records[response]['Max(Power)'], record[v.power])
                 if has_voltage:
-                    squeezed_records[response]['Min(Voltage)'] = min(squeezed_records[response]['Min(Voltage)'], record['voltage'])
-                    squeezed_records[response]['Max(Voltage)'] = max(squeezed_records[response]['Max(Voltage)'], record['voltage'])
+                    squeezed_records[response]['Min(Voltage)'] = min(squeezed_records[response]['Min(Voltage)'], record[v.voltage])
+                    squeezed_records[response]['Max(Voltage)'] = max(squeezed_records[response]['Max(Voltage)'], record[v.voltage])
+                if has_reset:
+                    squeezed_records[response]['Min(Reset)'] = min(squeezed_records[response]['Min(Reset)'], record[v.reset])
+                    squeezed_records[response]['Max(Reset)'] = max(squeezed_records[response]['Max(Reset)'], record[v.reset])
+
 
         return sorted(squeezed_records.values(), key=itemgetter('amount'), reverse=True)
 
 def give_xy_label(parameter):
-    labels = { 'length': '(ns)', 'delay': '(ns)', 'power': '(%)', 'voltage': '(v)' }
+    labels = { 
+        'normal': '(v)','normal_voltage': '(v)',
+        'length': '(ns)', 'glitch_length': '(ns)', 
+        'delay': '(ns)','glitch_delay': '(ns)',
+        'power': '(%)','glitch_power': '(%)', 
+        'voltage': '(v)','glitch_voltage': '(v)'
+    }
     return labels.get(parameter, '')
 
 def update_global_records(config):
@@ -255,8 +314,10 @@ def update_global_records(config):
         raise PreventUpdate
 
     # add some noise
-    df[config.x] += np.random.normal(0, config.jitter, df.shape[0])
-    df[config.y] += np.random.normal(0, config.jitter, df.shape[0])
+    exclude_from_jitter = ['color']
+    if config.x not in exclude_from_jitter and config.y not in exclude_from_jitter:
+        df[config.x] += np.random.normal(0, config.jitter, df.shape[0])
+        df[config.y] += np.random.normal(0, config.jitter, df.shape[0])
 
     # store records from global
     _RECORDS = df.to_dict('records')
@@ -421,12 +482,12 @@ def register_callbacks(app):
     # callback graph; chained from update_store()
     @app.callback(
         Output('graph','figure'),
-        [Input('config-store', 'data'), Input('x-dropdown', 'value'), Input('y-dropdown', 'value')],
+        [Input('config-store', 'data'), Input('x-dropdown', 'value'), Input('y-dropdown', 'value'), Input('switch-fixgreen', 'value')],
         [State(f'recolor-{color}', 'value') for color in _COLORS] + 
         [State(f'recolor-{color}-label', 'value') for color in _COLORS],
         prevent_initial_call=True
     )
-    def update_graph(store, x, y, *color_states):
+    def update_graph(store, x, y, fixgreen, *color_states):
         global _RECORDS
 
         config = AnalyzerConfig(**store)
@@ -454,7 +515,7 @@ def register_callbacks(app):
         # recolor if needed
         for record in _RECORDS:
            for value, color_code in zip(color_values, color_map.values()):
-               record['color'] = recolor(record, value, color_code)
+                record['color'] = recolor(record, value, color_code,fixgreen)
            colors[record['color']] += 1
 
         # output plot
@@ -480,7 +541,8 @@ def register_callbacks(app):
             raise PreventUpdate
 
         # update title of graph
-        fig.update_layout(title_text=config.database[:-7], title_x=0.5, title_y=0.95)
+        # fig.update_layout(title_text=config.database[:-7], title_x=0.5, title_y=0.95)
+        fig.update_layout(title_text="")
 
         if config.x == 'x' or config.y == 'y':
             fig.update_xaxes(title_standoff=0, side='top')
@@ -488,9 +550,11 @@ def register_callbacks(app):
 
         # Update legend labels
         labels = {}
-        for color_code, label in zip(color_map.values(), color_labels):
-           count = colors[color_code]
-           labels[color_code] = f'{label} ( {count} / {count/len(_RECORDS):.1%} )'
+        for color_code, value, label in zip(color_map.values(), color_values, color_labels):
+            count = colors[color_code]
+            if label in ['', None]:
+                label = value
+            labels[color_code] = f'{label} ( {count} / {count/len(_RECORDS):.1%} )'
         labels['P'] = f'timeout ( {colors["P"]} / {colors["P"]/len(_RECORDS):.1%} )'
         update_legend_labels(fig, labels)
 
@@ -525,7 +589,7 @@ def register_callbacks(app):
 
         for column in columns:
             fields.append(column)
-            if column in ['id', 'color', 'delay', 'length', 'power', 'rlen']:
+            if column in ['id', 'color', 'normal', 'delay', 'length', 'power', 'rlen']:
                 configs.append({
                     'autoSize':True,
                     'maxWidth': 100,
@@ -680,21 +744,21 @@ def create_layout(app):
             ),
             dbc.Card(
                 dbc.CardBody([
-
-                    html.P('re.search(*, response)'),
-
-                        *(
-                            input_component
-                            for color in _COLORS
-                            for input_component in [
-                                dcc.Input(
-                                    id=f'recolor-{color}',type="text",placeholder=f"{color}", style={'width':'15%'}
-                                ),
-                                dcc.Input(
-                                    id=f'recolor-{color}-label',type="text",placeholder=f"{color}-label",style={'width':'15%', 'margin-right': '10px', 'margin-bottom':'10px'}
-                                )
-                            ]
-                        ),
+          
+                    html.Span(dbc.Switch(id='switch-fixgreen', value=True, label="Fix green", style={})),
+        
+                    *(
+                        input_component
+                        for color in _COLORS
+                        for input_component in [
+                            dcc.Input(
+                                id=f'recolor-{color}',type="text",placeholder=f"{color}", style={'width':'15%'},persistence=True
+                            ),
+                            dcc.Input(
+                                id=f'recolor-{color}-label',type="text",placeholder=f"{color}-label",style={'width':'15%', 'margin-right': '10px', 'margin-bottom':'10px'},persistence=True
+                            )
+                        ]
+                    ),
                 ])
             ),
             dbc.Card(
