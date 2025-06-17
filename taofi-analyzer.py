@@ -191,7 +191,21 @@ def glitch_parameter_present(record, parameter):
     else:
         return False
 
-def generate_data(records, squeeze_records=False):
+def slice_response(response, s, e):
+
+    # slice the response
+    if s == None and e == None:
+        response = response
+    elif s != None and e == None:
+        response = response[s:]
+    elif s == None and e != None:
+        response = response[:e]
+    elif s != None and e != None:
+        response = response[s:e]
+
+    return response
+
+def generate_data(records, squeeze_records, response_s, response_e):
     v = VariableNames(records[0])
 
     has_normal = glitch_parameter_present(records[0], v.normal)
@@ -219,8 +233,13 @@ def generate_data(records, squeeze_records=False):
             if has_reset:
                 new_record['reset'] = record[v.reset]
             new_record['rlen'] = len(v.response)
-            new_record['response'] = record[v.response].decode('utf-8', errors='replace')            
-            new_record['hex(response)'] = record[v.response].hex(' ')
+
+            # slice response
+            response = slice_response(record[v.response], response_s, response_e)
+
+            new_record['response'] = response.decode('utf-8', errors='replace')            
+            new_record['hex(response)'] = response.hex(' ')
+
             new_records.append(new_record)
 
         return new_records
@@ -231,6 +250,9 @@ def generate_data(records, squeeze_records=False):
         for record in records:
             response = record[v.response].decode('utf-8', errors='replace')
             
+            # slice response
+            response = slice_response(response, response_s, response_e)            
+
             if response not in squeezed_records:
                 squeezed_records[response] = {}
                 squeezed_records[response]['amount'] = 1
@@ -568,18 +590,20 @@ def register_callbacks(app):
             Input('graph', 'figure'),
             Input('switch-squeezedata', 'value'),
             Input('switch-showhexdata', 'value'),
-            Input('switch-wraptext', 'value')
+            Input('switch-wraptext', 'value'),
+            Input('response_s', 'value'),
+            Input('response_e', 'value'),
         ],
         prevent_initial_call=True
     )
-    def update_data(store, figure, squeeze, showhex, wraptext):
+    def update_data(store, figure, squeeze, showhex, wraptext,response_s,response_e):
         global _RECORDS
 
         if any(x is None for x in [figure, _RECORDS]):
             raise PreventUpdate
 
         # squeeze data (or not)
-        data = generate_data(_RECORDS, squeeze_records=squeeze)
+        data = generate_data(_RECORDS, squeeze, response_s, response_e)
 
         # get columns from _RECORDS
         columns = data[0].keys()
@@ -687,7 +711,9 @@ def register_callbacks(app):
                 'pagination': True,
                 'animateRows': False,
                 'alwaysShowHorizontalScroll': True,
-                'autoSizeStrategy': resize_strategy
+                'autoSizeStrategy': resize_strategy,
+                "enableCellTextSelection": True, 
+                "ensureDomOrder": True
             },
             style={'height': '1000px'},
         )
@@ -718,7 +744,7 @@ def create_layout(app):
                             html.Option(value="delay > 100"),
                             html.Option(value="length > 100"),
                         ]),
-                        dcc.Input(id='query-input', type="text", list='examples', value='', style={'width':'100%','display': 'inline-block'}, placeholder=f"SELECT * FROM experiments WHERE"),
+                        dcc.Input(id='query-input', type="text", list='examples', value='', style={'width':'100%','display': 'inline-block'}, placeholder=f"SELECT * FROM experiments WHERE", persistence=True),
                     ], style={'display': 'flex', 'alignItems': 'center'})
                 ])
             ),
@@ -779,8 +805,10 @@ def create_layout(app):
                         id='switch-wraptext', 
                         value=False,
                         label='Wrap Text',
-                        style={'display': 'inline-block'}
+                        style={'display': 'inline-block','marginRight': '20px'}
                     ),
+                    dcc.Input(id='response_s', type="number", placeholder="start", style={'width':'50px', 'marginRight': '20px'}, persistence=True),
+                    dcc.Input(id='response_e', type="number", placeholder="end", style={'width':'50px', 'marginRight': '20px'}, persistence=True),
                     html.Div(id='data',style={'width':'100%', 'height':'100%', 'border-style':'none'}),
                 ])
             ),                        
