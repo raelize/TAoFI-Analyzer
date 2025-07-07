@@ -1,886 +1,817 @@
 #!/usr/bin/env python3
 import argparse
-import plotly.express as px
-import pandas as pd
-import numpy as np
-import sqlite3
-import time
-import re
-import sys
-from operator import itemgetter
-from contextlib import closing, contextmanager
-import os
-import json
 import base64
-
-from dataclasses import dataclass, asdict, field
-from dataclasses_json import dataclass_json
-from typing import Dict, NoReturn
-
+import os
+import re
+import sqlite3
+import sys
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass, field
 from os import listdir
-from dash import Dash, dcc, html, dash_table, Input, Output, State
-from dash.exceptions import PreventUpdate
-import dash_bootstrap_components as dbc
-from dash import callback_context as ctx
+from typing import Any, Dict, List, NoReturn, Optional
 
+import dash_bootstrap_components as dbc
+import numpy as np
+import pandas as pd
+import plotly.express as px
+from dash import Dash, Input, Output, State, dcc, html
+from dash import callback_context as ctx
+from dash.exceptions import PreventUpdate
 from dash_ag_grid import AgGrid
+from dataclasses_json import dataclass_json
 
 #
 # Dataclasses
-# 
+#
+
 
 @dataclass_json
 @dataclass
 class AnalyzerConfig:
     serverip: str = "127.0.0.1"
     serverport: int = 8080
-    directory: str = None
-    database: str = None
-    y: str = None
-    x: str = None
+    directory: str = ""
+    database: str = ""
+    y: str = ""
+    x: str = ""
     jitter: int = 0
-    argv: str = None
-    database: str = None
-    query: str = ''
-    colors: Dict[str, str] = field(default_factory=dict)
+    argv: str = ""
+    query: str = ""
+    colors: Dict[str, list] = field(default_factory=dict)
+    refresh_interval: int = 0  # In seconds, 0 means disabled
+
 
 #
 # Globals
-# 
+#
 
-_RECORDS = None
 _config = AnalyzerConfig()
-
-_COLORS = ['green', 'yellow', 'magenta', 'orange', 'cyan', 'blue', 'black', 'red']
-
-_COLOR_CONFIG = {
-    'P': ('pink', 'black', 'timeout'),
-    'G': ('green', 'white', 'green'),
-    'Y': ('yellow', 'black', 'yellow'),
-    'M': ('magenta', 'white', 'magenta'),
-    'O': ('orange', 'white', 'orange'), 
-    'C': ('cyan', 'white', 'cyan'),
-    'B': ('blue', 'white', 'blue'),
-    'Z': ('black', 'white', 'black'),
-    'R': ('red', 'white', 'red')
+_COLORS = ["green", "yellow", "magenta", "orange", "cyan", "blue", "black", "red"]
+_COLOR_MAP_CODES = {
+    "green": "G",
+    "yellow": "Y",
+    "magenta": "M",
+    "orange": "O",
+    "cyan": "C",
+    "blue": "B",
+    "black": "Z",
+    "red": "R",
 }
 
 for color in _COLORS:
-    _config.colors[color] = [None,None]
+    _config.colors[color] = [None, None]
+
 
 #
-# Functions
-# 
-
-def update_legend_labels(fig,labels):
-    for entry in fig.data:
-        if entry['name'] in labels:
-            entry['name'] = labels[entry['name']]
-
-def get_number_of_experiments(directory, database):
-    database_path = os.path.join(directory, database)
-
+# Database Helper Functions
+#
+@contextmanager
+def query_db(db_path: str):
     try:
-        with closing(sqlite3.connect(database_path)) as connection:
-            with closing(connection.cursor()) as cursor:
-                cursor.execute("SELECT COUNT(*) FROM experiments")
-                return cursor.fetchone()[0]
-    except Exception as e:
-        print("ERROR (get_number_of_experiments): %s" %(e))
+        conn = sqlite3.connect(db_path)
+        conn.create_function(
+            "match_string", 2, lambda r, t: t.encode(errors="strict") in r
+        )
+        conn.create_function("match_hex", 2, lambda r, t: bytes.fromhex(t) in r)
+        yield conn
+    except sqlite3.Error as e:
+        print(f"ERROR (query_db): {e}", file=sys.stderr)
+        raise PreventUpdate
+    finally:
+        if "conn" in locals() and conn:
+            conn.close()
 
-# TODO: add date
-def get_databases(directory):
-    # get all databases in directory
-    databases = []
-    for file in listdir(directory):
-        if re.search('^.*\\.sqlite$',file):
-            databases.append(file)
-    databases.sort(reverse=True)
 
-    # transform to options
-    databases_options = []
-    for index in range(len(databases)):
-        label = "%s (%d)" %(databases[index], get_number_of_experiments(directory, databases[index]))
-        databases_options.append( {'label':label, 'value': databases[index]} )
-
-    return databases_options
-
-def get_argv(directory, database):
-    database_path = os.path.join(directory, database)
-
+def get_number_of_experiments(directory: str, database: str) -> int:
+    db_path = os.path.join(directory, database)
     try:
-        with closing(sqlite3.connect(database_path)) as connection:
-            with closing(connection.cursor()) as cursor:
-                cursor.execute("SELECT argv FROM metadata")
-                argvstr = cursor.fetchone()[0]
-                return argvstr
-    except Exception as e:
-        print("ERROR (get_argv): %s" %(e))
+        with query_db(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM experiments")
+            return cursor.fetchone()[0]
+    except Exception:
+        return 0
 
-def get_parameters(directory, database):
-    database_path = os.path.join(directory, database)
-    
+
+def get_databases(directory: str) -> List[Dict[str, str]]:
+    if not directory or not os.path.isdir(directory):
+        return []
+    databases = sorted(
+        [f for f in listdir(directory) if f.endswith(".sqlite")], reverse=True
+    )
+
+    options = []
+    for db in databases:
+        count = get_number_of_experiments(directory, db)
+        options.append({"label": f"{db} ({count})", "value": db})
+    return options
+
+
+def get_db_metadata(directory: str, database: str, column: str) -> Optional[str]:
+    db_path = os.path.join(directory, database)
     try:
-        with closing(sqlite3.connect(database_path)) as connection:
-            with closing(connection.cursor()) as cursor:
-                cursor.execute("SELECT * FROM experiments")
-                parameters = list(next(zip(*cursor.description)))
-                parameters.remove('response')
-                return parameters
+        with query_db(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT {column} FROM metadata")
+            result = cursor.fetchone()
+            return result[0] if result else None
     except Exception as e:
-        print("ERROR (get_parameters): %s" %(e))
+        print(f"ERROR (get_db_metadata for {column}): {e}", file=sys.stderr)
+        return None
 
 
-# new function for sqlite3 query
-def match_string(response, token):
-    if token.encode(errors='strict') in response:
-        return True
-    else:
-        return False
-
-# new function for sqlite3 query
-def match_hex(response, token):
-    if bytes.fromhex(token) in response:
-        return True
-    else:
-        return False
-
-def recolor(record, regex, new_color, fixgreen):
-    if regex in [None, '']:
-        return record['color']
-    if fixgreen and record['color'] == 'G':
-        return record['color']
-    elif re.search(regex.encode(), record['response']):
-        return new_color
-    else:
-        return record['color']
+def get_parameters(directory: str, database: str) -> List[str]:
+    db_path = os.path.join(directory, database)
+    try:
+        with query_db(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM experiments LIMIT 1")
+            parameters = [desc[0] for desc in cursor.description]
+            if "response" in parameters:
+                parameters.remove("response")
+            return parameters
+    except Exception as e:
+        print(f"ERROR (get_parameters): {e}", file=sys.stderr)
+        return []
 
 
-# def get_variable_names(record):
-#     variable_names['id'] = get_variable_name(record, ['id'])
-#     variable_names['color'] = get_variable_name(record, ['color'])
-#     variable_names['delay'] = get_variable_name(record, ['delay', 'glitch_delay'])
-#     variable_names['length'] = get_variable_name(record, ['length', 'glitch_length'])
-#     variable_names['voltage'] = get_variable_name(record, ['voltage', 'glitch_voltage'])
-#     variable_names['power'] = get_variable_name(record, ['power', 'glitch_power'])
-
-#     return variable_names
-
-class VariableNames():
-    def __init__(self, record):
-        self.id = self.get_variable_name(record, ['id'])
-        self.color = self.get_variable_name(record, ['color'])
-        self.normal = self.get_variable_name(record, ['normal','normal_voltage'])
-        self.delay = self.get_variable_name(record, ['delay', 'glitch_delay'])
-        self.length = self.get_variable_name(record, ['length', 'glitch_length'])
-        self.voltage = self.get_variable_name(record, ['voltage', 'glitch_voltage'])
-        self.power = self.get_variable_name(record, ['power', 'glitch_power'])
-        self.response = self.get_variable_name(record, ['response'])
-        self.reset = self.get_variable_name(record, ['reset'])
-
-    def get_variable_name(self, record, names):
-        for name in names:
-            if name in record:
-                return name
-        else:
-            return None
-
-def glitch_parameter_present(record, parameter):
-    if parameter in record and record[parameter] not in [0, None]:
-        return True
-    else:
-        return False
-
-def slice_response(response, s, e):
-
-    # slice the response
-    if s == None and e == None:
-        response = response
-    elif s != None and e == None:
-        response = response[s:]
-    elif s == None and e != None:
-        response = response[:e]
-    elif s != None and e != None:
-        response = response[s:e]
-
-    return response
-
-def generate_data(records, squeeze_records, response_s, response_e):
-    v = VariableNames(records[0])
-
-    has_normal = glitch_parameter_present(records[0], v.normal)
-    has_length = glitch_parameter_present(records[0], v.length)
-    has_power = glitch_parameter_present(records[0], v.power) 
-    has_voltage = glitch_parameter_present(records[0], v.voltage)
-    has_reset = glitch_parameter_present(records[0], v.reset)
-
-    if not squeeze_records:
-        new_records = []
-
-        for record in records:
-            new_record = {}    
-            new_record['id'] = record[v.id]
-            new_record['color'] = record[v.color]
-            new_record['delay'] = record[v.delay]
-            if has_normal:
-                new_record['normal'] = record[v.normal]
-            if has_length:
-                new_record['length'] = record[v.length]
-            if has_power:
-                new_record['power'] = record[v.power]
-            if has_voltage:
-                new_record['voltage'] = record[v.voltage]
-            if has_reset:
-                new_record['reset'] = record[v.reset]
-            new_record['rlen'] = len(v.response)
-
-            # slice response
-            response = slice_response(record[v.response], response_s, response_e)
-
-            new_record['response'] = response.decode('utf-8', errors='replace')            
-            new_record['hex(response)'] = response.hex(' ')
-
-            new_records.append(new_record)
-
-        return new_records
-    else:
-
-        squeezed_records = {}
-        
-        for record in records:
-            response = record[v.response].decode('utf-8', errors='replace')
-            
-            # slice response
-            response = slice_response(response, response_s, response_e)            
-
-            if response not in squeezed_records:
-                squeezed_records[response] = {}
-                squeezed_records[response]['amount'] = 1
-                squeezed_records[response]['color'] = record[v.color]
-                squeezed_records[response]['Min(Delay)'] = record[v.delay]
-                squeezed_records[response]['Max(Delay)'] = record[v.delay]
-                if has_normal:
-                    squeezed_records[response]['Min(Normal)'] = record[v.normal]
-                    squeezed_records[response]['Max(Normal)'] = record[v.normal]
-                if has_length:
-                    squeezed_records[response]['Min(Length)'] = record[v.length]
-                    squeezed_records[response]['Max(Length)'] = record[v.length]
-                if has_power:
-                    squeezed_records[response]['Min(Power)'] = record[v.power]
-                    squeezed_records[response]['Max(Power)'] = record[v.power]
-                if has_voltage:
-                    squeezed_records[response]['Min(Voltage)'] = record[v.voltage]
-                    squeezed_records[response]['Max(Voltage)'] = record[v.voltage]
-                if has_reset:
-                    squeezed_records[response]['Min(Reset)'] = record[v.reset]
-                    squeezed_records[response]['Max(Reset)'] = record[v.reset]
-
-                squeezed_records[response]['response'] = response
-                squeezed_records[response]['hex(response)'] = record[v.response].hex(' ')
-            else:
-                squeezed_records[response]['amount'] += 1
-                squeezed_records[response]['Min(Delay)'] = min(squeezed_records[response]['Min(Delay)'], record[v.delay])
-                squeezed_records[response]['Max(Delay)'] = max(squeezed_records[response]['Max(Delay)'], record[v.delay])
-                if has_normal:
-                    squeezed_records[response]['Min(Normal)'] = min(squeezed_records[response]['Min(Normal)'], record[v.normal])
-                    squeezed_records[response]['Max(Normal)'] = max(squeezed_records[response]['Max(Normal)'], record[v.normal])
-                if has_length:
-                    squeezed_records[response]['Min(Length)'] = min(squeezed_records[response]['Min(Length)'], record[v.length])
-                    squeezed_records[response]['Max(Length)'] = max(squeezed_records[response]['Max(Length)'], record[v.length])
-                if has_power:
-                    squeezed_records[response]['Min(Power)'] = min(squeezed_records[response]['Min(Power)'], record[v.power])
-                    squeezed_records[response]['Max(Power)'] = max(squeezed_records[response]['Max(Power)'], record[v.power])
-                if has_voltage:
-                    squeezed_records[response]['Min(Voltage)'] = min(squeezed_records[response]['Min(Voltage)'], record[v.voltage])
-                    squeezed_records[response]['Max(Voltage)'] = max(squeezed_records[response]['Max(Voltage)'], record[v.voltage])
-                if has_reset:
-                    squeezed_records[response]['Min(Reset)'] = min(squeezed_records[response]['Min(Reset)'], record[v.reset])
-                    squeezed_records[response]['Max(Reset)'] = max(squeezed_records[response]['Max(Reset)'], record[v.reset])
+#
+# Data Processing Functions
+#
 
 
-        return sorted(squeezed_records.values(), key=itemgetter('amount'), reverse=True)
-
-def give_xy_label(parameter):
-    labels = { 
-        'normal': '(v)','normal_voltage': '(v)',
-        'length': '(ns)', 'glitch_length': '(ns)', 
-        'delay': '(ns)','glitch_delay': '(ns)',
-        'power': '(%)','glitch_power': '(%)', 
-        'voltage': '(v)','glitch_voltage': '(v)'
+def get_variable_names(columns: List[str]) -> Dict[str, Optional[str]]:
+    name_map = {
+        "id": ["id"],
+        "color": ["color"],
+        "normal": ["normal", "normal_voltage"],
+        "delay": ["delay", "glitch_delay"],
+        "length": ["length", "glitch_length"],
+        "voltage": ["voltage", "glitch_voltage"],
+        "power": ["power", "glitch_power"],
+        "response": ["response"],
+        "reset": ["reset"],
     }
-    return labels.get(parameter, '')
+    found_names = {}
+    for key, potential_names in name_map.items():
+        found_names[key] = next(
+            (name for name in potential_names if name in columns), None
+        )
+    return found_names
 
-def update_global_records(config):
-    global _RECORDS
 
-    if not os.path.isfile(f"{config.directory}/{config.database}"):
-        raise PreventUpdate
+def recolor_row(
+    row: pd.Series, regex: Optional[bytes], new_color: str, fixgreen: bool
+) -> str:
+    if not regex:
+        return row["color"]
+    if fixgreen and row["color"] == "G":
+        return row["color"]
+    if row["response_bytes"] and re.search(regex, row["response_bytes"]):
+        return new_color
+    return row["color"]
 
-    con = sqlite3.connect(f"{config.directory}/{config.database}")
 
-    # add some functions to sqlite
-    con.create_function('match_string', 2, match_string)
-    con.create_function('match_hex', 2, match_hex)
+def generate_data_table(
+    df: pd.DataFrame,
+    squeeze: bool,
+    showhex: bool,
+    slice_s: Optional[int],
+    slice_e: Optional[int],
+) -> List[Dict[str, Any]]:
+    if df.empty:
+        return []
 
-    # perform the query based on the query extension
-    if config.query == '':
-        query = f'SELECT * FROM experiments;'
+    v = get_variable_names(df.columns)
+
+    # Create a working copy
+    df_processed = df.copy()
+
+    df_processed["response_bytes"] = df_processed[v["response"]].apply(
+        lambda s: base64.b64decode(s) if isinstance(s, str) else b""
+    )
+
+    # Slice the DECODED bytes, not the base64 string
+    df_processed["response_sliced"] = df_processed["response_bytes"].str.slice(
+        slice_s, slice_e
+    )
+    df_processed["response_str"] = df_processed["response_sliced"].apply(
+        lambda x: x.decode("utf-8", errors="replace")
+    )
+    if showhex:
+        df_processed["hex(response)"] = df_processed["response_sliced"].apply(
+            lambda x: x.hex(" ") if x else ""
+        )
+
+    if not squeeze:
+        cols_to_keep = ["id", "color", "delay", "response_str"]
+        if v["normal"]:
+            cols_to_keep.append(v["normal"])
+        if v["length"]:
+            cols_to_keep.append(v["length"])
+        if v["power"]:
+            cols_to_keep.append(v["power"])
+        if v["voltage"]:
+            cols_to_keep.append(v["voltage"])
+        if v["reset"]:
+            cols_to_keep.append(v["reset"])
+        if showhex:
+            cols_to_keep.append("hex(response)")
+
+        df_processed.rename(columns={"response_str": "response"}, inplace=True)
+        return df_processed[
+            [c for c in cols_to_keep if c in df_processed.columns]
+        ].to_dict("records")
     else:
-        query = f'SELECT * FROM experiments WHERE {config.query};'
+        agg_dict = {"id": ("count", "amount")}
+        param_map = {
+            "Delay": v["delay"],
+            "Normal": v["normal"],
+            "Length": v["length"],
+            "Power": v["power"],
+            "Voltage": v["voltage"],
+            "Reset": v["reset"],
+        }
 
-    # read stuff from database
-    try:
-        df = pd.read_sql(query, con)
-        con.close()
-    except:
-        raise PreventUpdate
+        squeezed = (
+            df_processed.groupby(["response_str", "color"])
+            .agg(
+                amount=("id", "count"),
+                **{
+                    f"Min({name})": (col, "min")
+                    for name, col in param_map.items()
+                    if col and col in df_processed.columns
+                },
+                **{
+                    f"Max({name})": (col, "max")
+                    for name, col in param_map.items()
+                    if col and col in df_processed.columns
+                },
+            )
+            .reset_index()
+        )
 
-    # add some noise
-    exclude_from_jitter = ['color']
-    if config.x not in exclude_from_jitter and config.y not in exclude_from_jitter:
-        df[config.x] += np.random.normal(0, config.jitter, df.shape[0])
-        df[config.y] += np.random.normal(0, config.jitter, df.shape[0])
+        if showhex:
+            hex_map = df_processed.drop_duplicates(subset=["response_str"])[
+                ["response_str", "hex(response)"]
+            ]
+            squeezed = squeezed.merge(hex_map, on="response_str")
 
-    # store records from global
-    _RECORDS = df.to_dict('records')
+        squeezed.rename(columns={"response_str": "response"}, inplace=True)
+        return squeezed.sort_values(by="amount", ascending=False).to_dict("records")
 
-def database_exists(directory, database):
-    if directory == None or database == None:
-        return False
 
-    database_path = os.path.join(directory, database)
-    if os.path.exists(database_path):
-        return True
-    else:
-        return False
+def give_xy_label(parameter: str) -> str:
+    labels = {
+        "normal": "(v)",
+        "normal_voltage": "(v)",
+        "length": "(ns)",
+        "glitch_length": "(ns)",
+        "delay": "(ns)",
+        "glitch_delay": "(ns)",
+        "power": "(%)",
+        "glitch_power": "(%)",
+        "voltage": "(v)",
+        "glitch_voltage": "(v)",
+    }
+    return labels.get(parameter, "")
+
 
 #
 # Callbacks
-# 
+#
+
 
 def register_callbacks(app):
-
-    # callback for zoomed doints
+    # Callback 1: Update config from UI controls
     @app.callback(
-        Output('points', 'children'),
+        Output("config-store", "data"),
         [
-            Input('graph', 'relayoutData'),
-            Input('graph', 'figure')
-        ],
-        prevent_initial_call=True
+            Input("database-dropdown", "value"),
+            Input("x-dropdown", "value"),
+            Input("y-dropdown", "value"),
+            Input("query-input", "value"),
+            Input("jitter-input", "value"),
+        ]
+        + [Input(f"recolor-{c}", "value") for c in _COLORS]
+        + [Input(f"recolor-{c}-label", "value") for c in _COLORS],
+        State("config-store", "data"),
     )
-    def zoomed_points(relayoutData, figure):
-        if not figure or 'xaxis.range[0]' not in relayoutData:
+    def update_config_store(database, x, y, query, jitter, *color_states_and_store):
+        store, color_states = color_states_and_store[-1], color_states_and_store[:-1]
+        config = AnalyzerConfig(**store)
+        if not ctx.triggered_id:
             raise PreventUpdate
+        config.database, config.x, config.y, config.query, config.jitter = (
+            database,
+            x,
+            y,
+            query,
+            jitter,
+        )
+        for i, color in enumerate(_COLORS):
+            config.colors[color] = [color_states[i], color_states[i + len(_COLORS)]]
+        if ctx.triggered_id == "database-dropdown" and database:
+            config.argv = get_db_metadata(config.directory, database, "argv")
+        return asdict(config)
 
-        layout = figure["layout"]
-        x_axis = layout["xaxis"]
-        y_axis = layout["yaxis"]
-
-        if 'xaxis.range[0]' in relayoutData:
-            ranges = {
-                'x': (relayoutData['xaxis.range[0]'], relayoutData['xaxis.range[1]']),
-                'y': (relayoutData['yaxis.range[0]'], relayoutData['yaxis.range[1]'])
-            }
-        else:
-            ranges = {
-                'x': tuple(x_axis['range']),
-                'y': tuple(y_axis['range'])
-            }
-
-        p = f'''
-            * {x_axis['title']['text']}
-                * {ranges['x'][0]}
-                * {ranges['x'][1]} 
-            * {y_axis['title']['text']}
-                * {ranges['y'][0]}
-             * {ranges['y'][1]}
-        '''
-                       
-        return p
-
-    # callback for printing store at the bottom
+    # Callback 2: Load data from DB
     @app.callback(
-        Output('printstore', 'children'),
-        Input('config-store', 'data')
-    )
-    def printstore(store):
-        p = ""
-        for key,value in store.items():
-            p += f"* {key}:{value}\n"
-        return p
-
-    # callback for updating database list after clickin the button
-    @app.callback(
-        Output("database-dropdown", "options"),
-        Input('update-button', 'n_clicks'),
-    )
-    def update_database_list(nr_of_clicks):
-        return get_databases(_config.directory)
-
-    # callback for updating store
-    @app.callback(
-        Output('config-store', 'data'),
-        Output("database-dropdown", "value"),
-        Output("x-dropdown", "value"),
-        Output("y-dropdown", "value"),        
+        Output("records-store", "data"),
         [
-            Input('update-button', 'n_clicks'),
-            Input('database-dropdown', 'value'),
-            Input('x-dropdown', 'value'),
-            Input('y-dropdown', 'value'),
+            Input("update-button", "n_clicks"),
+            Input("auto-refresh-interval", "n_intervals"),
         ],
-        State('query-input', 'value'),
-        State('config-store', 'data'),
-        State("jitter-input", "value"),
-        [State(f'recolor-{color}', 'value') for color in _COLORS] + [State(f'recolor-{color}-label', 'value') for color in _COLORS],
+        State("config-store", "data"),
+        prevent_initial_call=True,
     )
-    # def update_store(nr_of_clicks, contents, query, database, x, y, store, *color_states):
-    def update_store(nr_of_clicks, database, x, y, query, store, jitter, *color_states):
-        if database == None:
+    def update_records_store(n_clicks, n_intervals, store):
+        config = AnalyzerConfig(**store)
+        if not all([config.directory, config.database]):
+            raise PreventUpdate
+        db_path = os.path.join(config.directory, config.database)
+        if not os.path.isfile(db_path):
             raise PreventUpdate
 
-        config = AnalyzerConfig(**store)
-
-        # check if database exists
-        if database_exists(config.directory, database) == False:
-            print("database does not exist")
-            raise PreventUpdate
-
-        # remove number of arguments
-        database = database.split(' ')[0] 
-        
-        config.database = database
-        config.x = x
-        config.y = y
-        config.jitter = jitter
-        config.query = query
-        config.argv = get_argv(config.directory, config.database)
-
-        # Update color in config
-        for color, regex, label in zip(_COLORS, color_states[:8], color_states[8:]):
-            config.colors[color] = [regex, label]
-
-        return asdict(config),config.database,config.x,config.y
-
-    # callback for printing the argv string at the bottom
-    @app.callback(
-        Output('argv', 'children'),
-        Input('config-store', 'data'),
-        prevent_initial_call=True
-    )
-    def update_argv(store):
-        config = AnalyzerConfig(**store)
-        return config.argv
-
-    # callback for x list
-    @app.callback(
-        Output('x-dropdown', 'options'),
-        Input('database-dropdown', 'value'),
-        State('config-store', 'data'),
-        prevent_initial_call=True
-    )
-    def update_dropdown_x(database, store):
-        config = AnalyzerConfig(**store)
-        if database_exists(config.directory, database):
-            return get_parameters(config.directory, database)
-        else:
-            raise PreventUpdate
-
-    # callback for y list
-    @app.callback(
-        Output('y-dropdown', 'options'),
-        Input('database-dropdown', 'value'),
-        State('config-store', 'data'),
-        prevent_initial_call=True
-    )
-    def update_dropdown_y(database, store):
-        config = AnalyzerConfig(**store)
-        if database_exists(config.directory, database):
-            return get_parameters(config.directory, database)
-        else:
-            raise PreventUpdate
-
-    # callback graph; chained from update_store()
-    @app.callback(
-        Output('graph','figure'),
-        [Input('config-store', 'data'), Input('x-dropdown', 'value'), Input('y-dropdown', 'value'), Input('switch-fixgreen', 'value')],
-        [State(f'recolor-{color}', 'value') for color in _COLORS] + 
-        [State(f'recolor-{color}-label', 'value') for color in _COLORS],
-        prevent_initial_call=True
-    )
-    def update_graph(store, x, y, fixgreen, *color_states):
-        global _RECORDS
-
-        config = AnalyzerConfig(**store)
-
-        if ctx.triggered_id == 'config-store':
-
-            # update x and y
-            x = config.x
-            y = config.y
-        
-        color_values = color_states[:8]
-        color_labels = color_states[8:]
-
-        # prevent update
-        if any(v is None for v in [x, y]):
-            raise PreventUpdate
-
-        update_global_records(config)
-
-        # color amounts
-        colors = { 'P':0,'G':0,'Y':0,'M':0,'O':0,'C':0,'B':0,'Z':0,'R':0 }
-
-        color_map = dict(zip(_COLORS,['G', 'Y', 'M', 'O', 'C', 'B', 'Z', 'R']))
-
-        # recolor if needed
-        for record in _RECORDS:
-           for value, color_code in zip(color_values, color_map.values()):
-                record['color'] = recolor(record, value, color_code,fixgreen)
-           colors[record['color']] += 1
-
-        # output plot
+        query = "SELECT * FROM experiments" + (
+            f" WHERE {config.query}" if config.query else ""
+        )
         try:
-            fig = px.scatter(
-                _RECORDS,
-                x = x, 
-                y = y,
-                render_mode = "webgl",
-                color = "color", 
-                labels = {
-                    'color': f'Classification ({len(_RECORDS):,})',
-                    x: f'{x} {give_xy_label(x)}',
-                    y: f'{y} {give_xy_label(y)}'
-                },
-                color_discrete_map = { 
-                   "P": "pink", "G": "green", "Y": "yellow", "M": "magenta",
-                   "O": "orange", "C": "cyan", "B": "blue", "Z": "black", "R": "red"
-                },
-                category_orders = {"color" : ["P", "G","Y","M","O","C","B","Z","R"]}
+            with query_db(db_path) as conn:
+                df = pd.read_sql_query(query, conn)
+        except Exception as e:
+            print(
+                f"ERROR: Failed to execute query '{query}'. Reason: {e}",
+                file=sys.stderr,
             )
-        except:
             raise PreventUpdate
 
-        # update title of graph
-        # fig.update_layout(title_text=config.database[:-7], title_x=0.5, title_y=0.95)
-        fig.update_layout(title_text="")
+        if df.empty:
+            return []
 
-        if config.x == 'x' or config.y == 'y':
-            fig.update_xaxes(title_standoff=0, side='top')
-            fig.update_yaxes(title_standoff=0, autorange='reversed')
+        if config.jitter > 0:
+            for axis in [config.x, config.y]:
+                if axis in df.columns and pd.api.types.is_numeric_dtype(df[axis]):
+                    df[axis] += np.random.normal(0, config.jitter, df.shape[0])
 
-        # Update legend labels
-        labels = {}
-        for color_code, value, label in zip(color_map.values(), color_values, color_labels):
-            count = colors[color_code]
-            if label in ['', None]:
-                label = value
-            labels[color_code] = f'{label} ( {count} / {count/len(_RECORDS):.1%} )'
-        labels['P'] = f'timeout ( {colors["P"]} / {colors["P"]/len(_RECORDS):.1%} )'
-        update_legend_labels(fig, labels)
+        # This makes the data JSON serializable for storage in dcc.Store
+        if "response" in df.columns:
+            df["response"] = df["response"].apply(
+                lambda b: base64.b64encode(b).decode("ascii")
+                if isinstance(b, bytes)
+                else None
+            )
+
+        return df.to_dict("records")
+
+    # Callback 3: Update Graph
+    @app.callback(
+        Output("graph", "figure"),
+        Input("records-store", "data"),
+        Input("switch-fixgreen", "value"),
+        State("config-store", "data"),
+        prevent_initial_call=True,
+    )
+    def update_graph(records_data, fixgreen, store):
+        if not records_data:
+            return px.scatter(title="No data to display")
+
+        df = pd.DataFrame.from_records(records_data)
+        config = AnalyzerConfig(**store)
+        x, y = config.x, config.y
+
+        if not all([x, y, x in df.columns, y in df.columns]):
+            raise PreventUpdate
+
+        if "response" in df.columns:
+            df["response_bytes"] = df["response"].apply(
+                lambda s: base64.b64decode(s) if isinstance(s, str) else b""
+            )
+
+        # Recolor using the new `response_bytes` column
+        df["color_new"] = df["color"]
+        for color_name, (regex, _) in config.colors.items():
+            if regex:
+                compiled_regex = re.compile(regex.encode(errors="strict"))
+                color_code = _COLOR_MAP_CODES[color_name]
+                # The `recolor_row` function now expects `response_bytes` to exist
+                df["color_new"] = df.apply(
+                    recolor_row, axis=1, args=(compiled_regex, color_code, fixgreen)
+                )
+
+        color_counts = df["color_new"].value_counts().to_dict()
+        total_records = len(df)
+        fig = px.scatter(
+            df,
+            x=x,
+            y=y,
+            render_mode="webgl",
+            color="color_new",
+            labels={
+                "color_new": f"Classification ({total_records:,})",
+                x: f"{x} {give_xy_label(x)}",
+                y: f"{y} {give_xy_label(y)}",
+            },
+            color_discrete_map={
+                "P": "pink",
+                "G": "green",
+                "Y": "yellow",
+                "M": "magenta",
+                "O": "orange",
+                "C": "cyan",
+                "B": "blue",
+                "Z": "black",
+                "R": "red",
+            },
+            category_orders={
+                "color_new": ["P", "G", "Y", "M", "O", "C", "B", "Z", "R"]
+            },
+        )
+        fig.update_layout(title_text="", uirevision=config.database)
+        legend_labels = {}
+        for color_name, (regex, label) in config.colors.items():
+            code = _COLOR_MAP_CODES[color_name]
+            count = color_counts.get(code, 0)
+            if not label:
+                label = regex if regex else color_name.capitalize()
+            legend_labels[code] = (
+                f"{label} ({count:,} / {count / total_records:.1%})"
+                if total_records
+                else f"{label} (0)"
+            )
+
+        p_count = color_counts.get("P", 0)
+        legend_labels["P"] = (
+            f"Timeout ({p_count:,} / {p_count / total_records:.1%})"
+            if total_records
+            else "Timeout (0)"
+        )
+
+        for entry in fig.data:
+            if entry.name in legend_labels:
+                entry.name = legend_labels[entry.name]
 
         return fig
 
-    # callback data; chained from update_graph()
+    # Callback 4: Update Data Table
     @app.callback(
-        Output('data', 'children'),
+        Output("data", "children"),
+        Input("records-store", "data"),
         [
-            Input('config-store', 'data'), 
-            Input('graph', 'figure'),
-            Input('switch-squeezedata', 'value'),
-            Input('switch-showhexdata', 'value'),
-            Input('switch-wraptext', 'value'),
-            Input('response_s', 'value'),
-            Input('response_e', 'value'),
+            Input("switch-squeezedata", "value"),
+            Input("switch-showhexdata", "value"),
+            Input("switch-wraptext", "value"),
+            Input("response_s", "value"),
+            Input("response_e", "value"),
         ],
-        prevent_initial_call=True
+        prevent_initial_call=True,
     )
-    def update_data(store, figure, squeeze, showhex, wraptext,response_s,response_e):
-        global _RECORDS
+    def update_data(records_data, squeeze, showhex, wraptext, s, e):
+        if not records_data:
+            return "No data available."
+        df = pd.DataFrame.from_records(records_data)
+        data = generate_data_table(df, squeeze, showhex, s, e)
+        if not data:
+            return "No results for current settings."
+        column_defs = []
+        for col in data[0].keys():
+            col_def = {"field": col, "autoSize": True}
+            if col in ["id", "color", "amount"]:
+                col_def.update({"maxWidth": 120, "pinned": "left"})
+            elif "Min(" in col or "Max(" in col:
+                col_def.update({"maxWidth": 150, "pinned": "left"})
+            elif col == "response":
+                col_def.update(
+                    {"width": 500, "wrapText": wraptext, "autoHeight": wraptext}
+                )
+            elif col == "hex(response)":
+                col_def.update({"width": 500, "hide": not showhex})
+            column_defs.append(col_def)
 
-        if any(x is None for x in [figure, _RECORDS]):
-            raise PreventUpdate
-
-        # squeeze data (or not)
-        data = generate_data(_RECORDS, squeeze, response_s, response_e)
-
-        # get columns from _RECORDS
-        columns = data[0].keys()
-
-        fields = []
-        configs = []
-
-        for column in columns:
-            fields.append(column)
-            if column in ['id', 'color', 'normal', 'delay', 'length', 'power', 'rlen']:
-                configs.append({
-                    'autoSize':True,
-                    'maxWidth': 100,
-                    'cellStyle': {'textAlign': 'center'},
-                   'headerClass': 'header-center-aligned',
-                   'pinned': 'left'
-                })
-            elif 'Max' in column or 'Min' in column or column == 'amount':
-                configs.append({
-                    'autoSize':True,
-                    'maxWidth': 150,
-                    'cellStyle': {'textAlign': 'center'},
-                    'headerClass': 'header-center-aligned',
-                    'pinned': 'left'
-                })                
-            elif column in ['response']:
-
-                if wraptext:
-                    configs.append({
-                        'autoSize':True,
-                        'width': 500,
-                        'wrapText': True,
-                        'autoHeight': True                     
-                    })
-                else:
-                    configs.append({
-                        'autoSize':True,
-
-                    })                    
-            elif column in ['hex(response)']:
-                configs.append({
-                    'autoSize':False,
-                    'width': 500,
-                    'hide': not showhex
-                })
-            else:
-                configs.append({'autoSize':True,})
-
-        columnDefs = [
-            {'field': field, **config}
-            for field, config in zip(fields, configs)
-        ]
-
-        rowstyles = {
-            "styleConditions": [
-                {
-                    "condition": "params.data.color == 'G'",
-                    "style": {"backgroundColor": "#d5f5e3"},
-                },
-                {
-                    "condition": "params.data.color == 'R'",
-                    "style": {"backgroundColor": "#fadbd8"},
-                },
-                {
-                    "condition": "params.data.color == 'Y'",
-                    "style": {"backgroundColor": "#fcf3cf"},
-                },
-                {
-                    "condition": "params.data.color == 'B'",
-                    "style": {"backgroundColor": "#d4e6f1"},
-                },
-                {
-                    "condition": "params.data.color == 'M'",
-                    "style": {"backgroundColor": "#ebdef0"},
-                },
-                {
-                    "condition": "params.data.color == 'O'",
-                    "style": {"backgroundColor": "#fae5d3"},
-                },
-                {
-                    "condition": "params.data.color == 'Z'",
-                    "style": {"backgroundColor": "#d6dbdf"},
-                },                         
-            ],
-            "defaultStyle": {"backgroundColor": "white", "color": "black"}
-        }
-
-        if wraptext:
-            resize_strategy = { 'type': 'fitGridWidth' }
-        else:
-            resize_strategy = { 'type': 'fitCellContents' } 
-
-        data = AgGrid(
-            columnDefs=columnDefs,
+        return AgGrid(
+            columnDefs=column_defs,
             rowData=data,
-            defaultColDef={
-                'resizable': True,
-                'sortable': True,
-                'filter': True,
-                'checkboxSelection': False
+            defaultColDef={"resizable": True, "sortable": True, "filter": True},
+            className="ag-theme-quartz",
+            dashGridOptions={
+                "pagination": True,
+                "animateRows": False,
+                "autoSizeStrategy": {"type": "fitGridWidth"}
+                if wraptext
+                else {"type": "fitCellContents"},
+                "enableCellTextSelection": True,
+                "ensureDomOrder": True,
             },
-            className='ag-theme-quartz',
-            getRowStyle=rowstyles,
-            dashGridOptions= {
-                'pagination': True,
-                'animateRows': False,
-                'alwaysShowHorizontalScroll': True,
-                'autoSizeStrategy': resize_strategy,
-                "enableCellTextSelection": True, 
-                "ensureDomOrder": True
-            },
-            style={'height': '1000px'},
+            style={"height": "1000px"},
         )
 
-        return data
+    # Other Callbacks
+    @app.callback(
+        Output("auto-refresh-interval", "disabled"),
+        Output("auto-refresh-interval", "interval"),
+        Input("toggle-auto-refresh", "value"),
+        Input("refresh-interval-input", "value"),
+    )
+    def manage_auto_refresh(is_on, interval_seconds):
+        is_disabled = not is_on
+        interval_ms = (interval_seconds or 0) * 1000
+        if interval_ms <= 0:
+            is_disabled = True
+        return is_disabled, interval_ms
+
+    @app.callback(
+        Output("database-dropdown", "options"),
+        [
+            Input("update-button", "n_clicks"),
+            Input("auto-refresh-interval", "n_intervals"),
+        ],
+    )
+    def update_database_list(n_clicks, n_intervals):
+        return get_databases(_config.directory)
+
+    @app.callback(
+        Output("x-dropdown", "options"),
+        Output("y-dropdown", "options"),
+        Input("database-dropdown", "value"),
+        State("config-store", "data"),
+    )
+    def update_axis_options(database, store):
+        if not database:
+            raise PreventUpdate
+        params = get_parameters(store["directory"], database)
+        return params, params
+
+    @app.callback(Output("argv", "children"), Input("config-store", "data"))
+    def update_argv(store):
+        return store.get("argv", "N/A")
+
 
 #
 # Layout
-# 
-
+#
 def create_layout(app):
-
-    app.layout = html.Div([
-        dcc.Store(id='config-store', data=asdict(_config)),
-        html.Div([
-            html.H4('Research by Raelize'),
-        ],style={'width':'80%','border-style':'none','margin':'0 auto'}),               
-        html.Div([
-            dbc.Card(
-                dbc.CardBody([
-
-                    html.Div([
-                        html.Button(f"Update", id='update-button', n_clicks=0, style={'width':'100px'}),
-                        html.Datalist(id="examples", children=[
-                            html.Option(value="match_string(response, 'ets')"),
-                            html.Option(value="match_hex(response, '661b')"),
-                            html.Option(value="color = 'G'"),
-                            html.Option(value="delay > 100"),
-                            html.Option(value="length > 100"),
-                        ]),
-                        dcc.Input(id='query-input', type="text", list='examples', value='', style={'width':'100%','display': 'inline-block'}, placeholder=f"SELECT * FROM experiments WHERE", persistence=True),
-                    ], style={'display': 'flex', 'alignItems': 'center'})
-                ])
+    app.layout = html.Div(
+        [
+            dcc.Store(id="config-store", data=asdict(_config)),
+            dcc.Store(id="records-store", data=[]),
+            dcc.Interval(
+                id="auto-refresh-interval",
+                interval=(_config.refresh_interval or 60) * 1000,
+                n_intervals=0,
+                disabled=_config.refresh_interval <= 0,
             ),
+            html.Div(
+                [
+                    html.H4("Research by Raelize"),
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                dbc.Row(
+                                    [
+                                        dbc.Col(
+                                            html.Button(
+                                                "Update",
+                                                id="update-button",
+                                                n_clicks=0,
+                                                className="w-100",
+                                            ),
+                                            width=2,
+                                        ),
+                                        dbc.Col(
+                                            dcc.Input(
+                                                id="query-input",
+                                                type="text",
+                                                value="",
+                                                className="w-100",
+                                                placeholder="e.g., color = 'G' AND delay > 100",
+                                                persistence=True,
+                                            ),
+                                            width=10,
+                                        ),
+                                    ]
+                                )
+                            ]
+                        ),
+                        className="mb-3",
+                    ),
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                dbc.Row(
+                                    [
+                                        dbc.Col(
+                                            dcc.Dropdown(
+                                                id="database-dropdown",
+                                                options=get_databases(
+                                                    _config.directory
+                                                ),
+                                                placeholder="Select a database...",
+                                            ),
+                                            width=6,
+                                        ),
+                                        dbc.Col(
+                                            dcc.Dropdown(
+                                                id="x-dropdown", placeholder="x-axis"
+                                            ),
+                                            width=2,
+                                        ),
+                                        dbc.Col(
+                                            dcc.Dropdown(
+                                                id="y-dropdown", placeholder="y-axis"
+                                            ),
+                                            width=2,
+                                        ),
+                                        dbc.Col(
+                                            dcc.Input(
+                                                id="jitter-input",
+                                                type="number",
+                                                value=0,
+                                                placeholder="Jitter",
+                                                min=0,
+                                            ),
+                                            width=2,
+                                        ),
+                                    ]
+                                )
+                            ]
+                        ),
+                        className="mb-3",
+                    ),
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.Div(
+                                    [
+                                        dbc.Switch(
+                                            id="toggle-auto-refresh",
+                                            label="Auto-Refresh",
+                                            value=_config.refresh_interval > 0,
+                                            style={"margin-right": "20px"},
+                                        ),
+                                        dcc.Input(
+                                            id="refresh-interval-input",
+                                            type="number",
+                                            placeholder="Seconds",
+                                            min=1,
+                                            step=1,
+                                            value=_config.refresh_interval or None,
+                                            style={"width": "100px"},
+                                        ),
+                                    ],
+                                    style={"display": "flex", "alignItems": "center"},
+                                )
+                            ]
+                        ),
+                        className="mb-3",
+                    ),
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                dcc.Graph(id="graph", style={"height": "60vh"}),
+                                html.Hr(),
+                                dbc.Switch(
+                                    id="switch-fixgreen",
+                                    value=True,
+                                    label="Fix Green (don't recolor successful glitches)",
+                                ),
+                                html.Div(
+                                    [
+                                        dcc.Input(
+                                            id=f"recolor-{c}",
+                                            type="text",
+                                            placeholder=f"Regex for {c.capitalize()}",
+                                            style={
+                                                "width": "150px",
+                                                "margin-right": "5px",
+                                            },
+                                            persistence=True,
+                                        )
+                                        for c in _COLORS
+                                    ]
+                                ),
+                                html.Div(
+                                    [
+                                        dcc.Input(
+                                            id=f"recolor-{c}-label",
+                                            type="text",
+                                            placeholder=f"{c.capitalize()} Label",
+                                            style={
+                                                "width": "150px",
+                                                "margin-right": "5px",
+                                            },
+                                            persistence=True,
+                                        )
+                                        for c in _COLORS
+                                    ],
+                                    style={"margin-top": "10px"},
+                                ),
+                            ]
+                        ),
+                        className="mb-3",
+                    ),
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.Div(
+                                    [
+                                        dbc.Switch(
+                                            id="switch-squeezedata",
+                                            value=True,
+                                            label="Squeeze Data",
+                                            style={"margin-right": "20px"},
+                                        ),
+                                        dbc.Switch(
+                                            id="switch-showhexdata",
+                                            value=False,
+                                            label="Show Hex",
+                                            style={"margin-right": "20px"},
+                                        ),
+                                        dbc.Switch(
+                                            id="switch-wraptext",
+                                            value=False,
+                                            label="Wrap Text",
+                                            style={"margin-right": "20px"},
+                                        ),
+                                        dcc.Input(
+                                            id="response_s",
+                                            type="number",
+                                            placeholder="slice start",
+                                            style={
+                                                "width": "100px",
+                                                "margin-right": "10px",
+                                            },
+                                            persistence=True,
+                                        ),
+                                        dcc.Input(
+                                            id="response_e",
+                                            type="number",
+                                            placeholder="slice end",
+                                            style={"width": "100px"},
+                                            persistence=True,
+                                        ),
+                                    ],
+                                    className="mb-3",
+                                ),
+                                html.Div(
+                                    id="data", style={"width": "100%", "height": "100%"}
+                                ),
+                            ]
+                        )
+                    ),
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                dbc.CardHeader("Arguments:"),
+                                dcc.Markdown("N/A", id="argv"),
+                            ]
+                        ),
+                        className="mt-3",
+                    ),
+                ],
+                style={"width": "90%", "margin": "0 auto"},
+            ),
+        ],
+        style={"width": "100%", "margin-top": "50px", "margin-bottom": "100px"},
+    )
 
-            dbc.Card(
-                dbc.CardBody([
-                    dcc.Dropdown(id='database-dropdown', style={'width':'100%'}, options=get_databases(_config.directory), placeholder="database"),
-                    html.Div([
-                        dcc.Dropdown(id='x-dropdown', style={'width':'100%'}, placeholder="x-axis"),
-                        dcc.Dropdown(id='y-dropdown', style={'width':'100%'}, placeholder="y-axis"),
-                        dcc.Input(id='jitter-input', type="number", value=0, style={'width':'100%'}),
-                    ], style=dict(display='flex')),
-                    
-                    
-                ])
-            ),
-            dbc.Card(
-                dbc.CardBody([
-                    html.Center([
-                        dcc.Graph(id='graph', style={'width':'80%'}), 
-                    ]),
-                ])
-            ),
-            dbc.Card(
-                dbc.CardBody([
-          
-                    html.Span(dbc.Switch(id='switch-fixgreen', value=True, label="Fix green", style={})),
-        
-                    *(
-                        input_component
-                        for color in _COLORS
-                        for input_component in [
-                            dcc.Input(
-                                id=f'recolor-{color}',type="text",placeholder=f"{color}", style={'width':'15%'},persistence=True
-                            ),
-                            dcc.Input(
-                                id=f'recolor-{color}-label',type="text",placeholder=f"{color}-label",style={'width':'15%', 'margin-right': '10px', 'margin-bottom':'10px'},persistence=True
-                            )
-                        ]
-                    ),
-                ])
-            ),
-            dbc.Card(
-                dbc.CardBody([                
-                    dbc.Switch(
-                        id='switch-squeezedata', 
-                        value=True,
-                        label='Squeeze Data',
-                        style={'display': 'inline-block', 'marginRight': '20px'}
-                    ),
-                    dbc.Switch(
-                        id='switch-showhexdata', 
-                        value=False,
-                        label='Show Hex',
-                        style={'display': 'inline-block','marginRight': '20px'}
-                    ),
-                    dbc.Switch(
-                        id='switch-wraptext', 
-                        value=False,
-                        label='Wrap Text',
-                        style={'display': 'inline-block','marginRight': '20px'}
-                    ),
-                    dcc.Input(id='response_s', type="number", placeholder="start", style={'width':'50px', 'marginRight': '20px'}, persistence=True),
-                    dcc.Input(id='response_e', type="number", placeholder="end", style={'width':'50px', 'marginRight': '20px'}, persistence=True),
-                    html.Div(id='data',style={'width':'100%', 'height':'100%', 'border-style':'none'}),
-                ])
-            ),                        
-            dbc.Card([
-                dbc.CardHeader('Arguments:'),
-                dbc.CardBody([                   
-                    dcc.Markdown('', id='argv'),
-                ])
-            ]),   
-            dbc.Card([
-                dbc.CardHeader('Points:'),
-                dbc.CardBody([   
-                    dcc.Markdown('', id='points'),
-                ])
-            ]),   
-            dbc.Card([
-                dbc.CardHeader('Store:'),
-                dbc.CardBody([   
-                    dcc.Markdown('', id='printstore'),
-                ])
-            ]),                           
-        ],style={'width':'80%','border-style':'none','margin':'0 auto'}),
-    ],style={'width':'100%', 'border-style':'none', 'margin-top':'100px','margin-bottom':'100px'})
 
+#
+# Main Execution
+#
 def check_env() -> NoReturn:
-    required = ['ANALYZER_DIRECTORY']
-    missing =  [var for var in required if var not in os.environ]
-    if missing:
+    required = ["ANALYZER_DIRECTORY"]
+    if missing := [var for var in required if var not in os.environ]:
         raise ValueError(f"Missing required environment variables: {missing}")
 
-#
-# App
-# 
-
-app = Dash(__name__, external_stylesheets=[dbc.themes.JOURNAL])
-app.css.config.serve_locally = True
-app.scripts.config.serve_locally = True
-server = app.server
-
-#
-# Main
-# 
 
 if __name__ == "__main__":
-    __version__ = "2.1"
-
+    __version__ = "2.2.1"  # Bugfix version
     parser = argparse.ArgumentParser(
-        description="analyzer.py v%s - Raelize Glitch Analyzer" % __version__,
-        prog="analyzer"
-    ) 
-    parser.add_argument("--ip",help="Server port", type=str, default="127.0.0.1")
-    parser.add_argument("--port",help="Server port", type=int, default=8000)
-    parser.add_argument("--directory",help="Database directorys", required=True)
+        description=f"analyzer.py v{__version__} - Raelize Glitch Analyzer",
+        prog="analyzer",
+    )
+    parser.add_argument("--ip", help="Server IP", type=str, default="127.0.0.1")
+    parser.add_argument("--port", help="Server port", type=int, default=8000)
+    parser.add_argument("--directory", help="Database directory", required=True)
     parser.add_argument("--x", required=False, help="Preset the x parameter")
     parser.add_argument("--y", required=False, help="Preset the y parameter")
-    
+    parser.add_argument(
+        "--refresh-interval",
+        type=int,
+        default=0,
+        help="Auto-refresh interval in seconds (0 to disable).",
+    )
     args = parser.parse_args()
-
-    _config.serverip = args.ip 
-    _config.serverport = args.port
-    _config.directory = args.directory
-    _config.x = args.x
-    _config.y = args.y
-
+    (
+        _config.serverip,
+        _config.serverport,
+        _config.directory,
+        _config.x,
+        _config.y,
+        _config.refresh_interval,
+    ) = args.ip, args.port, args.directory, args.x, args.y, args.refresh_interval
+    app = Dash(__name__, external_stylesheets=[dbc.themes.JOURNAL])
+    server = app.server
     register_callbacks(app)
     create_layout(app)
-
     app.run(host=_config.serverip, port=_config.serverport, debug=True)
-else:
-    # this path is taken when started with e.g. unicorn
-    check_env()
-    _config.directory = os.environ.get('ANALYZER_DIRECTORY', './databases')
-
-    register_callbacks(app)
-    create_layout(app)
