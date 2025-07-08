@@ -8,7 +8,7 @@ import sys
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from os import listdir
-from typing import Any, Dict, List, NoReturn, Optional
+from typing import Any, Dict, List, Optional
 
 import dash_bootstrap_components as dbc
 import numpy as np
@@ -29,18 +29,30 @@ from dataclasses_json import dataclass_json
 class AnalyzerConfig:
     serverip: str = "127.0.0.1"
     serverport: int = 8080
-    directory: str = None
-    database: str = None
-    y: str = None
-    x: str = None
-    z: str = None
+    directory: str = ""
+    database: str = ""
+    y: str = ""
+    x: str = ""
+    z: str = ""
     jitter: int = 0
-    argv: str = None
+    argv: str = ""
     query: str = ""
     colors: Dict[str, list] = field(default_factory=dict)
     refresh_interval: int = 0
     plot_type: str = "scatter"
-    theme: str = "light"
+    theme: str = "JOURNAL"
+
+
+# Theme utilities (based on dash-bootstrap-templates)
+dbc_themes_url = {
+    item: getattr(dbc.themes, item)
+    for item in dir(dbc.themes)
+    if not item.startswith(("_", "GRID"))
+}
+
+# Available Bootstrap themes
+AVAILABLE_THEMES = list(dbc_themes_url.keys())
+dbc_dark_themes = ["CYBORG", "DARKLY", "SLATE", "SOLAR", "SUPERHERO", "VAPOR"]
 
 
 #
@@ -210,6 +222,16 @@ def generate_data_table(
         return squeezed.sort_values(by="amount", ascending=False).to_dict("records")
 
 
+def get_theme_from_url():
+    """Extract theme from URL parameters"""
+
+    try:
+        # This is a simple approach - in a real app you'd use flask.request
+        return "JOURNAL"  # Default fallback
+    except:
+        return "JOURNAL"
+
+
 def give_xy_label(p: str) -> str:
     l = {
         "normal": "(v)",
@@ -230,6 +252,39 @@ def give_xy_label(p: str) -> str:
 # Callbacks
 #
 def register_callbacks(app):
+    # Robust theme switching based on dash-bootstrap-templates approach
+    app.clientside_callback(
+        """
+        function (selected_theme, themes) {
+            if (!selected_theme) return window.dash_clientside.no_update;
+
+            // Find existing theme stylesheets
+            let stylesheets = []
+            Object.values(themes).forEach(
+                url => stylesheets.push(...document.querySelectorAll(`link[rel='stylesheet'][href*='${url}']`))
+            );
+
+            // Create a new stylesheet link element
+            let newStylesheet = document.createElement("link");
+            newStylesheet.rel = "stylesheet";
+            newStylesheet.href = selected_theme;
+
+            // When the new stylesheet is loaded, remove the old ones
+            newStylesheet.onload = function () {
+                stylesheets.forEach(s => s.remove());
+            }
+
+            // Append the new stylesheet to the document head
+            document.head.appendChild(newStylesheet);
+
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("theme-dummy", "children"),
+        Input("theme-dropdown", "value"),
+        State("theme-store", "data"),
+    )
+
     @app.callback(
         Output("config-store", "data"),
         [
@@ -240,16 +295,23 @@ def register_callbacks(app):
             Input("query-input", "value"),
             Input("jitter-input", "value"),
             Input("plot-type-radio", "value"),
+            Input("theme-dropdown", "value"),
         ]
         + [Input(f"recolor-{c}", "value") for c in _COLORS]
         + [Input(f"recolor-{c}-label", "value") for c in _COLORS],
         State("config-store", "data"),
     )
-    def update_config_store(database, x, y, z, query, jitter, plot_type, *states):
+    def update_config_store(
+        database, x, y, z, query, jitter, plot_type, theme_url, *states
+    ):
         store, color_states = states[-1], states[:-1]
         config = AnalyzerConfig(**store)
         if not ctx.triggered_id:
             raise PreventUpdate
+
+        # Convert theme URL back to theme name
+        url_to_theme = {v: k for k, v in dbc_themes_url.items()}
+        theme_name = url_to_theme.get(theme_url, "JOURNAL")
 
         (
             config.database,
@@ -259,7 +321,8 @@ def register_callbacks(app):
             config.query,
             config.jitter,
             config.plot_type,
-        ) = database, x, y, z, query, jitter, plot_type
+            config.theme,
+        ) = database, x, y, z, query, jitter, plot_type, theme_name
         for i, color in enumerate(_COLORS):
             config.colors[color] = [color_states[i], color_states[i + len(_COLORS)]]
         if ctx.triggered_id == "database-dropdown" and database:
@@ -335,16 +398,25 @@ def register_callbacks(app):
             Input("y-dropdown", "value"),
             Input("z-dropdown", "value"),
             Input("switch-fixgreen", "value"),
+            Input("theme-dropdown", "value"),  # Added theme input
         ],
         State("config-store", "data"),
         prevent_initial_call=True,
     )
-    def update_graph(records_data, plot_type, x, y, z, fixgreen, store):
+    def update_graph(records_data, plot_type, x, y, z, fixgreen, theme_url, store):
         if not records_data:
             return px.scatter(title="No data to display")
         df = pd.DataFrame.from_records(records_data)
         config = AnalyzerConfig(**store)
-        plotly_template = "plotly"  # Use default plotly theme
+
+        # Convert theme URL back to theme name for dark theme detection
+        url_to_theme = {v: k for k, v in dbc_themes_url.items()}
+        current_theme = url_to_theme.get(theme_url, "JOURNAL")
+
+        # Use dark template for dark themes, light for others
+        plotly_template = (
+            "plotly_dark" if current_theme in dbc_dark_themes else "plotly"
+        )
 
         if "response" in df.columns:
             df["response_bytes"] = df["response"].apply(
@@ -609,6 +681,25 @@ def create_layout(app):
                 dbc.NavbarBrand(
                     [html.I(className="bi bi-magic me-2"), "Raelize Glitch Analyzer"]
                 ),
+                dbc.Col(
+                    [
+                        html.Label("Theme:", className="text-light me-2"),
+                        dcc.Dropdown(
+                            id="theme-dropdown",
+                            options=[
+                                {"label": theme.title(), "value": dbc_themes_url[theme]}
+                                for theme in AVAILABLE_THEMES
+                            ],
+                            value=dbc_themes_url[_config.theme],
+                            clearable=False,
+                            persistence=True,
+                            persistence_type="local",
+                            style={"width": "150px", "color": "black"},
+                        ),
+                    ],
+                    width="auto",
+                    className="d-flex align-items-center",
+                ),
             ]
         ),
         color="dark",
@@ -829,9 +920,11 @@ def create_layout(app):
     )
 
     app.layout = html.Div(
-        [
+        id="app-container",
+        children=[
             dcc.Store(id="config-store", data=asdict(_config)),
             dcc.Store(id="records-store", data=[]),
+            dcc.Store(id="theme-store", data=dbc_themes_url),
             dcc.Interval(
                 id="auto-refresh-interval",
                 interval=(_config.refresh_interval or 60) * 1000,
@@ -923,20 +1016,20 @@ def create_layout(app):
                 ],
                 fluid=True,
             ),
-        ]
+        ],
     )
 
 
 #
 # Main Execution
 #
-def check_env() -> NoReturn:
+def check_env() -> None:
     if missing := [var for var in ["ANALYZER_DIRECTORY"] if var not in os.environ]:
         raise ValueError(f"Missing required environment variables: {missing}")
 
 
 if __name__ == "__main__":
-    __version__ = "3.2"
+    __version__ = "2.1"
     parser = argparse.ArgumentParser(
         description=f"analyzer.py v{__version__} - Raelize Glitch Analyzer",
         prog="analyzer",
@@ -959,7 +1052,10 @@ if __name__ == "__main__":
 
     app = Dash(
         __name__,
-        external_stylesheets=[dbc.themes.JOURNAL, dbc.icons.BOOTSTRAP],
+        external_stylesheets=[
+            dbc_themes_url[_config.theme],
+            dbc.icons.BOOTSTRAP,
+        ],
     )
     server = app.server
     register_callbacks(app)
