@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Raelize Glitch Analyzer v2.1
-A Dash-based web application for analyzing glitch experiment data.
-"""
 
 # ============================================================================
 # IMPORTS
@@ -14,6 +10,7 @@ import os
 import re
 import sqlite3
 import sys
+import tomllib
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from os import listdir
@@ -28,6 +25,43 @@ from dash import callback_context as ctx
 from dash.exceptions import PreventUpdate
 from dash_ag_grid import AgGrid
 from dataclasses_json import dataclass_json
+
+# ============================================================================
+# PROJECT METADATA
+# ============================================================================
+
+
+def get_project_metadata():
+    """Load project metadata from pyproject.toml."""
+    default_metadata = {
+        "version": "2.1.0",
+        "description": "A Dash-based web application for analyzing glitch experiment data",
+    }
+
+    try:
+        # Look for pyproject.toml in current directory or parent directories
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        for _ in range(3):  # Check up to 3 levels up
+            pyproject_path = os.path.join(current_dir, "pyproject.toml")
+            if os.path.exists(pyproject_path):
+                with open(pyproject_path, "rb") as f:
+                    data = tomllib.load(f)
+                    project = data.get("project", {})
+                    return {
+                        "version": project.get("version", default_metadata["version"]),
+                        "description": project.get(
+                            "description", default_metadata["description"]
+                        ),
+                    }
+            current_dir = os.path.dirname(current_dir)
+
+        return default_metadata
+    except Exception:
+        return default_metadata
+
+
+# Load project metadata
+PROJECT_METADATA = get_project_metadata()
 
 # ============================================================================
 # CONFIGURATION & DATA MODELS
@@ -1190,7 +1224,7 @@ def validate_environment():
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Raelize Glitch Analyzer v2.1 - A Dash-based web application for analyzing glitch experiment data",
+        description=f"Raelize Glitch Analyzer v{PROJECT_METADATA['version']} - {PROJECT_METADATA['description']}",
         prog="analyzer",
     )
     parser.add_argument("--ip", type=str, default="127.0.0.1", help="Server IP address")
@@ -1207,6 +1241,9 @@ def parse_arguments():
         help="Auto-refresh interval in seconds",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {PROJECT_METADATA['version']}"
+    )
 
     return parser.parse_args()
 
@@ -1252,7 +1289,7 @@ def main():
         create_layout(app)
 
         # Run the application
-        print("Starting Raelize Glitch Analyzer v2.1")
+        print(f"Starting Raelize Glitch Analyzer v{PROJECT_METADATA['version']}")
         print(f"Server: http://{_config.serverip}:{_config.serverport}")
         print(f"Database directory: {_config.directory}")
 
