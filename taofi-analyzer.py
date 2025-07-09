@@ -14,6 +14,7 @@ import tomllib
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from os import listdir
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import dash_bootstrap_components as dbc
@@ -39,28 +40,28 @@ def get_project_metadata():
     }
 
     try:
-        # Look for pyproject.toml in current directory or parent directories
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        for _ in range(3):  # Check up to 3 levels up
-            pyproject_path = os.path.join(current_dir, "pyproject.toml")
-            if os.path.exists(pyproject_path):
-                with open(pyproject_path, "rb") as f:
-                    data = tomllib.load(f)
-                    project = data.get("project", {})
-                    return {
-                        "version": project.get("version", default_metadata["version"]),
-                        "description": project.get(
-                            "description", default_metadata["description"]
-                        ),
-                    }
-            current_dir = os.path.dirname(current_dir)
-
+        pyproject_path = Path(os.path.join(current_dir, "pyproject.toml"))
+        if pyproject_path.exists():
+            with open(pyproject_path, "rb") as f:
+                data = tomllib.load(f)
+                project = data.get("project", {})
+                return {
+                    "version": project.get("version", default_metadata["version"]),
+                    "description": project.get(
+                        "description", default_metadata["description"]
+                    ),
+                }
+        else:
+            print(
+                f"WARNING: pyproject.toml not found at {pyproject_path}. Using default metadata.",
+                file=sys.stderr,
+            )
         return default_metadata
     except Exception:
         return default_metadata
 
 
-# Load project metadata
 PROJECT_METADATA = get_project_metadata()
 
 # ============================================================================
@@ -93,7 +94,6 @@ class AnalyzerConfig:
 # THEME CONFIGURATION
 # ============================================================================
 
-# Theme utilities (based on dash-bootstrap-templates)
 dbc_themes_url = {
     item: getattr(dbc.themes, item)
     for item in dir(dbc.themes)
@@ -108,9 +108,6 @@ dbc_dark_themes = ["CYBORG", "DARKLY", "SLATE", "SOLAR", "SUPERHERO", "VAPOR"]
 # GLOBAL CONSTANTS & VARIABLES
 # ============================================================================
 
-_config = AnalyzerConfig()
-
-# Color mapping for experiment results
 _COLORS = ["green", "yellow", "magenta", "orange", "cyan", "blue", "black", "red"]
 _COLOR_MAP_CODES = {
     "green": "G",
@@ -123,9 +120,51 @@ _COLOR_MAP_CODES = {
     "red": "R",
 }
 
-# Initialize color configuration
-for color in _COLORS:
-    _config.colors[color] = [None, None]
+
+# ============================================================================
+# CONFIGURATION LOADING
+# ============================================================================
+
+
+def load_config_from_env() -> AnalyzerConfig:
+    """Load configuration from environment variables."""
+    config = AnalyzerConfig()
+
+    for color in _COLORS:
+        config.colors[color] = [None, None]
+
+    config.serverip = os.getenv("ANALYZER_IP", config.serverip)
+    config.serverport = int(os.getenv("ANALYZER_PORT", str(config.serverport)))
+    config.directory = os.getenv("ANALYZER_DIRECTORY", config.directory)
+    config.x = os.getenv("ANALYZER_X", config.x)
+    config.y = os.getenv("ANALYZER_Y", config.y)
+    config.z = os.getenv("ANALYZER_Z", config.z)
+    config.jitter = int(os.getenv("ANALYZER_JITTER", str(config.jitter)))
+    config.query = os.getenv("ANALYZER_QUERY", config.query)
+    config.refresh_interval = int(
+        os.getenv("ANALYZER_REFRESH_INTERVAL", str(config.refresh_interval))
+    )
+    config.plot_type = os.getenv("ANALYZER_PLOT_TYPE", config.plot_type)
+    config.theme = os.getenv("ANALYZER_THEME", config.theme)
+
+    return config
+
+
+def configure_from_args(args) -> AnalyzerConfig:
+    """Configure from command-line arguments."""
+    config = AnalyzerConfig()
+
+    for color in _COLORS:
+        config.colors[color] = [None, None]
+
+    config.serverip = args.ip
+    config.serverport = args.port
+    config.directory = args.directory
+    config.x = args.x
+    config.y = args.y
+    config.refresh_interval = args.refresh_interval
+
+    return config
 
 
 # ============================================================================
@@ -252,7 +291,6 @@ def generate_data_table(
     var_names = get_variable_names(df.columns)
     df_processed = df.copy()
 
-    # Process response data
     df_processed["response_bytes"] = df_processed[var_names["response"]].apply(
         lambda s: base64.b64decode(s) if isinstance(s, str) else b""
     )
@@ -269,7 +307,6 @@ def generate_data_table(
         )
 
     if not squeeze:
-        # Standard table format
         columns = ["id", "color", "delay", "response_str"]
         for param in ["normal", "length", "power", "voltage", "reset"]:
             if var_names[param]:
@@ -349,7 +386,7 @@ def give_xy_label(parameter: str) -> str:
 # ============================================================================
 
 
-def register_callbacks(app):
+def register_callbacks(app, config):
     """Register all Dash callbacks."""
 
     # Theme switching callback
@@ -407,7 +444,7 @@ def register_callbacks(app):
     ):
         """Update the configuration store when any input changes."""
         store, color_states = states[-1], states[:-1]
-        config = AnalyzerConfig(**store)
+        config_data = AnalyzerConfig(**store)
 
         if not ctx.triggered_id:
             raise PreventUpdate
@@ -417,26 +454,28 @@ def register_callbacks(app):
         theme_name = url_to_theme.get(theme_url, "JOURNAL")
 
         # Update configuration
-        config.database = database
-        config.x = x
-        config.y = y
-        config.z = z
-        config.query = query
-        config.jitter = jitter
-        config.plot_type = plot_type
-        config.theme = theme_name
+        config_data.database = database
+        config_data.x = x
+        config_data.y = y
+        config_data.z = z
+        config_data.query = query
+        config_data.jitter = jitter
+        config_data.plot_type = plot_type
+        config_data.theme = theme_name
 
         # Update color configurations
         for i, color in enumerate(_COLORS):
-            config.colors[color] = [color_states[i], color_states[i + len(_COLORS)]]
+            config_data.colors[color] = [
+                color_states[i],
+                color_states[i + len(_COLORS)],
+            ]
 
         # Update argv if database changed
         if ctx.triggered_id == "database-dropdown" and database:
-            config.argv = get_db_metadata(config.directory, database, "argv")
+            config_data.argv = get_db_metadata(config_data.directory, database, "argv")
 
-        return asdict(config)
+        return asdict(config_data)
 
-    # Z-axis visibility toggle
     @app.callback(Output("z-axis-col", "style"), Input("plot-type-radio", "value"))
     def toggle_z_axis_visibility(plot_type):
         """Show/hide Z-axis dropdown based on plot type."""
@@ -457,25 +496,25 @@ def register_callbacks(app):
     )
     def update_records_store(n_clicks, n_intervals, database_value, store):
         """Load experiment data from database."""
-        config = AnalyzerConfig(**store)
+        config_data = AnalyzerConfig(**store)
 
         # Auto-load data when database is selected
         if ctx.triggered_id == "database-dropdown":
-            if not database_value or not config.directory:
+            if not database_value or not config_data.directory:
                 return []
-            config.database = database_value
+            config_data.database = database_value
 
-        if not all([config.directory, config.database]):
+        if not all([config_data.directory, config_data.database]):
             return []
 
-        db_path = os.path.join(config.directory, config.database)
+        db_path = os.path.join(config_data.directory, config_data.database)
         if not os.path.isfile(db_path):
             return []
 
         # Build SQL query
         query = "SELECT * FROM experiments"
-        if config.query:
-            query += f" WHERE {config.query}"
+        if config_data.query:
+            query += f" WHERE {config_data.query}"
 
         try:
             with query_db(db_path) as conn:
@@ -488,10 +527,10 @@ def register_callbacks(app):
             return []
 
         # Apply jitter if specified
-        if config.jitter > 0:
-            for axis in [config.x, config.y]:
+        if config_data.jitter > 0:
+            for axis in [config_data.x, config_data.y]:
                 if axis in df.columns and pd.api.types.is_numeric_dtype(df[axis]):
-                    df[axis] += np.random.normal(0, config.jitter, df.shape[0])
+                    df[axis] += np.random.normal(0, config_data.jitter, df.shape[0])
 
         # Encode response data
         if "response" in df.columns:
@@ -503,7 +542,6 @@ def register_callbacks(app):
 
         return df.to_dict("records")
 
-    # Graph plotting callback
     @app.callback(
         Output("graph", "figure"),
         [
@@ -524,9 +562,8 @@ def register_callbacks(app):
             return px.scatter(title="No data to display")
 
         df = pd.DataFrame.from_records(records_data)
-        config = AnalyzerConfig(**store)
+        config_data = AnalyzerConfig(**store)
 
-        # Determine plotly template based on theme
         url_to_theme = {v: k for k, v in dbc_themes_url.items()}
         current_theme = url_to_theme.get(theme_url, "JOURNAL")
         plotly_template = (
@@ -541,7 +578,7 @@ def register_callbacks(app):
 
         # Apply recoloring rules
         df["color_new"] = df["color"]
-        for color_name, (regex, _) in config.colors.items():
+        for color_name, (regex, _) in config_data.colors.items():
             if regex:
                 df["color_new"] = df.apply(
                     recolor_row,
@@ -636,17 +673,15 @@ def register_callbacks(app):
         if not fig:
             raise PreventUpdate
 
-        # Update layout
         fig.update_layout(
             title_text="",
-            uirevision=config.database,
+            uirevision=config_data.database,
             legend_title_text=f"Classification ({total_records:,})",
         )
 
-        # Add custom legend labels for scatter plots
         if plot_type != "density_heatmap":
             legend_labels = {}
-            for color_name, (regex, label) in config.colors.items():
+            for color_name, (regex, label) in config_data.colors.items():
                 code = _COLOR_MAP_CODES[color_name]
                 count = color_counts.get(code, 0)
                 display_name = label if label else (regex or color_name.capitalize())
@@ -669,7 +704,6 @@ def register_callbacks(app):
 
         return fig
 
-    # Data table callback
     @app.callback(
         Output("data", "children"),
         Input("records-store", "data"),
@@ -695,7 +729,6 @@ def register_callbacks(app):
         if not data:
             return "No results for current settings."
 
-        # Configure column definitions
         column_defs = [{"field": c, "autoSize": True} for c in data[0].keys()]
         for col_def in column_defs:
             field = col_def["field"]
@@ -710,7 +743,6 @@ def register_callbacks(app):
             elif field == "hex(response)":
                 col_def.update({"width": 500, "hide": not showhex})
 
-        # Configure row styling
         row_styles = {
             "styleConditions": [
                 {
@@ -766,7 +798,6 @@ def register_callbacks(app):
             style={"height": "1000px"},
         )
 
-    # Auto-refresh management
     @app.callback(
         Output("auto-refresh-interval", "disabled"),
         Output("auto-refresh-interval", "interval"),
@@ -781,19 +812,19 @@ def register_callbacks(app):
             disabled = True
         return disabled, milliseconds
 
-    # Database list updates
     @app.callback(
         Output("database-dropdown", "options"),
         [
             Input("update-button", "n_clicks"),
             Input("auto-refresh-interval", "n_intervals"),
         ],
+        State("config-store", "data"),
     )
-    def update_database_list(clicks, intervals):
+    def update_database_list(clicks, intervals, store):
         """Update the list of available databases."""
-        return get_databases(_config.directory)
+        config_data = AnalyzerConfig(**store)
+        return get_databases(config_data.directory)
 
-    # Axis options updates
     @app.callback(
         Output("x-dropdown", "options"),
         Output("y-dropdown", "options"),
@@ -805,10 +836,10 @@ def register_callbacks(app):
         """Update axis dropdown options based on selected database."""
         if not database:
             raise PreventUpdate
-        parameters = get_parameters(store["directory"], database)
+        config_data = AnalyzerConfig(**store)
+        parameters = get_parameters(config_data.directory, database)
         return parameters, parameters, parameters
 
-    # Command-line arguments display
     @app.callback(Output("argv", "children"), Input("config-store", "data"))
     def update_argv_display(store):
         """Display command-line arguments from database metadata."""
@@ -837,7 +868,7 @@ def create_navbar():
                                 {"label": theme.title(), "value": dbc_themes_url[theme]}
                                 for theme in AVAILABLE_THEMES
                             ],
-                            value=dbc_themes_url[_config.theme],
+                            value=dbc_themes_url["JOURNAL"],
                             clearable=False,
                             persistence=True,
                             persistence_type="local",
@@ -961,7 +992,7 @@ def create_data_source_tab():
                                     [
                                         dcc.Dropdown(
                                             id="database-dropdown",
-                                            options=get_databases(_config.directory),
+                                            options=[],
                                             placeholder="Select a database...",
                                         )
                                     ],
@@ -1006,7 +1037,7 @@ def create_data_source_tab():
                                         dbc.Switch(
                                             id="toggle-auto-refresh",
                                             label="Auto-Refresh",
-                                            value=_config.refresh_interval > 0,
+                                            value=False,
                                         )
                                     ],
                                     width=2,
@@ -1020,7 +1051,7 @@ def create_data_source_tab():
                                             placeholder="sec",
                                             min=1,
                                             step=1,
-                                            value=_config.refresh_interval or None,
+                                            value=None,
                                             className="w-100",
                                         )
                                     ],
@@ -1176,21 +1207,21 @@ def create_argv_card():
     )
 
 
-def create_layout(app):
+def create_layout(app, config):
     """Create the complete application layout."""
     app.layout = html.Div(
         id="app-container",
         children=[
             # Data stores
-            dcc.Store(id="config-store", data=asdict(_config)),
+            dcc.Store(id="config-store", data=asdict(config)),
             dcc.Store(id="records-store", data=[]),
             dcc.Store(id="theme-store", data=dbc_themes_url),
             # Auto-refresh interval
             dcc.Interval(
                 id="auto-refresh-interval",
-                interval=(_config.refresh_interval or 60) * 1000,
+                interval=(config.refresh_interval or 60) * 1000,
                 n_intervals=0,
-                disabled=_config.refresh_interval <= 0,
+                disabled=config.refresh_interval <= 0,
             ),
             # Theme dummy div for clientside callback
             html.Div(id="theme-dummy", style={"display": "none"}),
@@ -1214,11 +1245,15 @@ def create_layout(app):
 # ============================================================================
 
 
-def validate_environment():
-    """Validate required environment variables."""
-    missing_vars = [var for var in ["ANALYZER_DIRECTORY"] if var not in os.environ]
-    if missing_vars:
-        raise ValueError(f"Missing required environment variables: {missing_vars}")
+def validate_config(config: AnalyzerConfig):
+    """Validate the configuration."""
+    if not config.directory:
+        raise ValueError(
+            "Directory must be specified via ANALYZER_DIRECTORY environment variable or command-line argument"
+        )
+
+    if not os.path.isdir(config.directory):
+        raise ValueError(f"Directory does not exist: {config.directory}")
 
 
 def parse_arguments():
@@ -1230,7 +1265,7 @@ def parse_arguments():
     parser.add_argument("--ip", type=str, default="127.0.0.1", help="Server IP address")
     parser.add_argument("--port", type=int, default=8000, help="Server port")
     parser.add_argument(
-        "directory", nargs=1, type=str, help="Directory containing database files"
+        "directory", nargs="?", type=str, help="Directory containing database files"
     )
     parser.add_argument("--x", required=False, help="Default X-axis parameter")
     parser.add_argument("--y", required=False, help="Default Y-axis parameter")
@@ -1248,27 +1283,52 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def configure_app_from_args(args):
-    """Configure the global config from command-line arguments."""
-    _config.serverip = args.ip
-    _config.serverport = args.port
-    _config.directory = args.directory[0]
-    _config.x = args.x
-    _config.y = args.y
-    _config.refresh_interval = args.refresh_interval
-
-
-def create_dash_app():
+def create_dash_app(config: AnalyzerConfig):
     """Create and configure the Dash application."""
     app = Dash(
         __name__,
         external_stylesheets=[
-            dbc_themes_url[_config.theme],
+            dbc_themes_url[config.theme],
             dbc.icons.BOOTSTRAP,
         ],
     )
     app.server.logger.setLevel("INFO")
+
+    register_callbacks(app, config)
+    create_layout(app, config)
+
     return app
+
+
+# ============================================================================
+# WSGI APPLICATION FOR GUNICORN
+# ============================================================================
+
+
+def create_app():
+    """Create the WSGI application for Gunicorn."""
+    config = load_config_from_env()
+    if config.directory:
+        validate_config(config)
+        print(f"Starting Raelize Glitch Analyzer v{PROJECT_METADATA['version']}")
+        print(f"Database directory: {config.directory}")
+
+    app = create_dash_app(config)
+    return app.server
+
+
+server = None
+
+
+def get_wsgi_app():
+    """Get or create the WSGI application instance."""
+    global server
+    if server is None:
+        server = create_app()
+    return server
+
+
+server = get_wsgi_app()
 
 
 # ============================================================================
@@ -1277,23 +1337,24 @@ def create_dash_app():
 
 
 def main():
-    """Main application entry point."""
+    """Main application entry point for standalone execution."""
     try:
-        # Parse arguments and configure
         args = parse_arguments()
-        configure_app_from_args(args)
 
-        # Create and configure Dash app
-        app = create_dash_app()
-        register_callbacks(app)
-        create_layout(app)
+        if args.directory:
+            config = configure_from_args(args)
+        else:
+            config = load_config_from_env()
 
-        # Run the application
+        validate_config(config)
+
+        app = create_dash_app(config)
+
         print(f"Starting Raelize Glitch Analyzer v{PROJECT_METADATA['version']}")
-        print(f"Server: http://{_config.serverip}:{_config.serverport}")
-        print(f"Database directory: {_config.directory}")
+        print(f"Server: http://{config.serverip}:{config.serverport}")
+        print(f"Database directory: {config.directory}")
 
-        app.run(host=_config.serverip, port=_config.serverport, debug=args.debug)
+        app.run(host=config.serverip, port=config.serverport, debug=args.debug)
 
     except Exception as e:
         print(f"Error starting application: {e}", file=sys.stderr)
