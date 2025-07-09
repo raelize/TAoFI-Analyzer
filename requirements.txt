@@ -1,8 +1,0 @@
-dash
-dash_ag_grid
-dash_bootstrap_components
-dataclasses_json
-numpy
-pandas
-plotly
-gunicorn
