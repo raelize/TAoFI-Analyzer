@@ -1,6 +1,6 @@
 [project]
 name = "taofi-analyzer"
-version = "0.1.0"
+version = "2.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -13,4 +13,8 @@ dependencies = [
     "numpy>=2.3.1",
     "pandas>=2.3.0",
     "plotly>=6.2.0",
+    "tomli; python_version < '3.11'",
 ]
+
+[dependency-groups]
+dev = ["basedpyright>=1.29.5", "ruff>=0.12.2"]
