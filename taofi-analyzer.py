@@ -293,7 +293,6 @@ def generate_data(records, squeeze_records, response_s, response_e):
 
             new_record["response"] = response.decode("utf-8", errors="replace")
             new_record["hex(response)"] = response.hex(" ")
-
             new_records.append(new_record)
 
         return new_records
@@ -329,9 +328,8 @@ def generate_data(records, squeeze_records, response_s, response_e):
                     squeezed_records[response]["Max(Reset)"] = record[v.reset]
 
                 squeezed_records[response]["response"] = response
-                squeezed_records[response]["hex(response)"] = record[v.response].hex(
-                    " "
-                )
+                squeezed_records[response]["rlen"] = len(response)
+                squeezed_records[response]["hex(response)"] = record[v.response].hex(" ")
             else:
                 squeezed_records[response]["amount"] += 1
                 squeezed_records[response]["Min(Delay)"] = min(
@@ -754,7 +752,25 @@ def register_callbacks(app):
                         }
                     )
             elif column in ["hex(response)"]:
-                configs.append({"autoSize": False, "width": 500, "hide": not showhex})
+                if wraptext:
+                    configs.append(
+                        {
+                            "autoSize": False,
+                            "width": 500,
+                            "wrapText": True,
+                            "autoHeight": True,
+                            "cellStyle": {"font-family": "monospace"},
+                            "hide": not showhex
+                        }
+                    )
+                else:
+                    configs.append(
+                        {
+                            "autoSize": False,
+                            "cellStyle": {"font-family": "monospace"},
+                            "hide": not showhex
+                        }
+                    )
             else:
                 configs.append(
                     {
