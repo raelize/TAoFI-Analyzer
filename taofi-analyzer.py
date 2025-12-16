@@ -133,7 +133,6 @@ def get_number_of_experiments(directory, database):
         print("ERROR (get_number_of_experiments): %s" % (e))
 
 
-# TODO: add date
 def get_databases(directory):
     # get all databases in directory
     databases = []
@@ -206,18 +205,6 @@ def recolor(record, regex, new_color, fixgreen):
         return new_color
     else:
         return record["color"]
-
-
-# def get_variable_names(record):
-#     variable_names['id'] = get_variable_name(record, ['id'])
-#     variable_names['color'] = get_variable_name(record, ['color'])
-#     variable_names['delay'] = get_variable_name(record, ['delay', 'glitch_delay'])
-#     variable_names['length'] = get_variable_name(record, ['length', 'glitch_length'])
-#     variable_names['voltage'] = get_variable_name(record, ['voltage', 'glitch_voltage'])
-#     variable_names['power'] = get_variable_name(record, ['power', 'glitch_power'])
-
-#     return variable_names
-
 
 class VariableNames:
     def __init__(self, record):
@@ -454,7 +441,7 @@ def register_callbacks(app):
         prevent_initial_call=True,
     )
     def zoomed_points(relayoutData, figure):
-        if not figure or "xaxis.range[0]" not in relayoutData:
+        if not figure or not relayoutData or "xaxis.range[0]" not in relayoutData:
             raise PreventUpdate
 
         layout = figure["layout"]
@@ -520,7 +507,7 @@ def register_callbacks(app):
             raise PreventUpdate
 
         config = AnalyzerConfig(**store)
-
+        
         # check if database exists
         if not database_exists(config.directory, database):
             print("database does not exist")
@@ -922,6 +909,7 @@ def create_layout(app):
                                     style={"width": "100%"},
                                     options=get_databases(_config.directory),
                                     placeholder="database",
+                                    value=_config.database or None,
                                 ),
                                 html.Div(
                                     [
@@ -929,11 +917,13 @@ def create_layout(app):
                                             id="x-dropdown",
                                             style={"width": "100%"},
                                             placeholder="x-axis",
+                                            value=_config.x or None,
                                         ),
                                         dcc.Dropdown(
                                             id="y-dropdown",
                                             style={"width": "100%"},
                                             placeholder="y-axis",
+                                            value=_config.y or None,
                                         ),
                                         dcc.Input(
                                             id="jitter-input",
@@ -1124,6 +1114,7 @@ if __name__ == "__main__":
     parser.add_argument("directory", nargs="+", help="Database directorys", type=str)
     parser.add_argument("--x", required=False, help="Preset the x parameter")
     parser.add_argument("--y", required=False, help="Preset the y parameter")
+    parser.add_argument("--database", required=False, help="Database selected")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {PROJECT_METADATA['version']}"
@@ -1136,6 +1127,7 @@ if __name__ == "__main__":
     _config.directory = args.directory[0]
     _config.x = args.x
     _config.y = args.y
+    _config.database = args.database 
 
     register_callbacks(app)
     create_layout(app)
