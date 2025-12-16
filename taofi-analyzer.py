@@ -10,6 +10,7 @@ from operator import itemgetter
 from os import listdir
 from pathlib import Path
 from typing import Dict
+import random
 
 import dash_bootstrap_components as dbc
 import numpy as np
@@ -424,6 +425,7 @@ def update_global_records(config):
         df[config.x] += np.random.normal(0, config.jitter, df.shape[0])
         df[config.y] += np.random.normal(0, config.jitter, df.shape[0])
 
+
     # store records from global
     _RECORDS = df.to_dict("records")
 
@@ -665,6 +667,12 @@ def register_callbacks(app):
         # update title of graph
         # fig.update_layout(title_text=config.database[:-7], title_x=0.5, title_y=0.95)
         fig.update_layout(title_text="")
+        fig.update_layout(width=1000, height=1000, autosize=False)
+        fig.update_layout(
+            legend = dict(font = dict(size = 15)),
+            legend_title = dict(font = dict(size = 15)),
+        )
+        fig.update_layout(legend= {'itemsizing': 'constant'})
 
         if config.x == "x" or config.y == "y":
             fig.update_xaxes(title_standoff=0, side="top")
