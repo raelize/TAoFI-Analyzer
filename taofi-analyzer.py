@@ -201,6 +201,9 @@ class VariableNames:
         self.power = self.get_variable_name(record, ["power", "glitch_power"])
         self.response = self.get_variable_name(record, ["response"])
         self.reset = self.get_variable_name(record, ["reset"])
+        self.x = self.get_variable_name(record, ["x"])
+        self.y = self.get_variable_name(record, ["y"])
+        self.z = self.get_variable_name(record, ["z"])
 
     def get_variable_name(self, record, names):
         for name in names:
@@ -211,7 +214,7 @@ class VariableNames:
 
 
 def glitch_parameter_present(record, parameter):
-    if parameter in record and record[parameter] not in [0, None]:
+    if parameter in record and record[parameter] not in [None]:
         return True
     else:
         return False
@@ -239,6 +242,9 @@ def generate_data(records, squeeze_records, response_s, response_e):
     has_power = glitch_parameter_present(records[0], v.power)
     has_voltage = glitch_parameter_present(records[0], v.voltage)
     has_reset = glitch_parameter_present(records[0], v.reset)
+    has_x = glitch_parameter_present(records[0], v.x)
+    has_y = glitch_parameter_present(records[0], v.y)
+    has_z = glitch_parameter_present(records[0], v.z)
 
     if not squeeze_records:
         new_records = []
@@ -258,6 +264,12 @@ def generate_data(records, squeeze_records, response_s, response_e):
                 new_record["voltage"] = record[v.voltage]
             if has_reset:
                 new_record["reset"] = record[v.reset]
+
+            if has_x and has_y and has_z:
+                new_record["x"] = record[v.x]
+                new_record["y"] = record[v.y]
+                new_record["z"] = record[v.z]
+
             new_record["rlen"] = len(v.response)
 
             # slice response
@@ -281,69 +293,69 @@ def generate_data(records, squeeze_records, response_s, response_e):
                 squeezed_records[response] = {}
                 squeezed_records[response]["amount"] = 1
                 squeezed_records[response]["color"] = record[v.color]
-                squeezed_records[response]["Min(Delay)"] = record[v.delay]
-                squeezed_records[response]["Max(Delay)"] = record[v.delay]
+                squeezed_records[response]["Delay >"] = record[v.delay]
+                squeezed_records[response]["Delay <"] = record[v.delay]
                 if has_normal:
-                    squeezed_records[response]["Min(Normal)"] = record[v.normal]
-                    squeezed_records[response]["Max(Normal)"] = record[v.normal]
+                    squeezed_records[response]["Normal >"] = record[v.normal]
+                    squeezed_records[response]["Normal <"] = record[v.normal]
                 if has_length:
-                    squeezed_records[response]["Min(Length)"] = record[v.length]
-                    squeezed_records[response]["Max(Length)"] = record[v.length]
+                    squeezed_records[response]["Length >"] = record[v.length]
+                    squeezed_records[response]["Length <"] = record[v.length]
                 if has_power:
-                    squeezed_records[response]["Min(Power)"] = record[v.power]
-                    squeezed_records[response]["Max(Power)"] = record[v.power]
+                    squeezed_records[response]["Power >"] = record[v.power]
+                    squeezed_records[response]["Power <"] = record[v.power]
                 if has_voltage:
-                    squeezed_records[response]["Min(Voltage)"] = record[v.voltage]
-                    squeezed_records[response]["Max(Voltage)"] = record[v.voltage]
+                    squeezed_records[response]["Voltage >"] = record[v.voltage]
+                    squeezed_records[response]["Voltage <"] = record[v.voltage]
                 if has_reset:
-                    squeezed_records[response]["Min(Reset)"] = record[v.reset]
-                    squeezed_records[response]["Max(Reset)"] = record[v.reset]
+                    squeezed_records[response]["Reset >"] = record[v.reset]
+                    squeezed_records[response]["Reset <"] = record[v.reset]
 
                 squeezed_records[response]["response"] = response
                 squeezed_records[response]["rlen"] = len(response)
                 squeezed_records[response]["hex(response)"] = record[v.response].hex(" ")
             else:
                 squeezed_records[response]["amount"] += 1
-                squeezed_records[response]["Min(Delay)"] = min(
-                    squeezed_records[response]["Min(Delay)"], record[v.delay]
+                squeezed_records[response]["Delay >"] = min(
+                    squeezed_records[response]["Delay >"], record[v.delay]
                 )
-                squeezed_records[response]["Max(Delay)"] = max(
-                    squeezed_records[response]["Max(Delay)"], record[v.delay]
+                squeezed_records[response]["Delay <"] = max(
+                    squeezed_records[response]["Delay <"], record[v.delay]
                 )
                 if has_normal:
-                    squeezed_records[response]["Min(Normal)"] = min(
-                        squeezed_records[response]["Min(Normal)"], record[v.normal]
+                    squeezed_records[response]["Normal >"] = min(
+                        squeezed_records[response]["Normal >"], record[v.normal]
                     )
-                    squeezed_records[response]["Max(Normal)"] = max(
-                        squeezed_records[response]["Max(Normal)"], record[v.normal]
+                    squeezed_records[response]["Normal <"] = max(
+                        squeezed_records[response]["Normal <"], record[v.normal]
                     )
                 if has_length:
-                    squeezed_records[response]["Min(Length)"] = min(
-                        squeezed_records[response]["Min(Length)"], record[v.length]
+                    squeezed_records[response]["Length >"] = min(
+                        squeezed_records[response]["Length >"], record[v.length]
                     )
-                    squeezed_records[response]["Max(Length)"] = max(
-                        squeezed_records[response]["Max(Length)"], record[v.length]
+                    squeezed_records[response]["Length <"] = max(
+                        squeezed_records[response]["Length <"], record[v.length]
                     )
                 if has_power:
-                    squeezed_records[response]["Min(Power)"] = min(
-                        squeezed_records[response]["Min(Power)"], record[v.power]
+                    squeezed_records[response]["Power >"] = min(
+                        squeezed_records[response]["Power >"], record[v.power]
                     )
-                    squeezed_records[response]["Max(Power)"] = max(
-                        squeezed_records[response]["Max(Power)"], record[v.power]
+                    squeezed_records[response]["Power <"] = max(
+                        squeezed_records[response]["Power <"], record[v.power]
                     )
                 if has_voltage:
-                    squeezed_records[response]["Min(Voltage)"] = min(
-                        squeezed_records[response]["Min(Voltage)"], record[v.voltage]
+                    squeezed_records[response]["Voltage >"] = min(
+                        squeezed_records[response]["Voltage >"], record[v.voltage]
                     )
-                    squeezed_records[response]["Max(Voltage)"] = max(
-                        squeezed_records[response]["Max(Voltage)"], record[v.voltage]
+                    squeezed_records[response]["Voltage <"] = max(
+                        squeezed_records[response]["Voltage <"], record[v.voltage]
                     )
                 if has_reset:
-                    squeezed_records[response]["Min(Reset)"] = min(
-                        squeezed_records[response]["Min(Reset)"], record[v.reset]
+                    squeezed_records[response]["Reset >"] = min(
+                        squeezed_records[response]["Reset >"], record[v.reset]
                     )
-                    squeezed_records[response]["Max(Reset)"] = max(
-                        squeezed_records[response]["Max(Reset)"], record[v.reset]
+                    squeezed_records[response]["Reset <"] = max(
+                        squeezed_records[response]["Reset <"], record[v.reset]
                     )
 
         return sorted(squeezed_records.values(), key=itemgetter("amount"), reverse=True)
@@ -421,8 +433,11 @@ def register_callbacks(app):
     # callback for zoomed doints
     @app.callback(
         Output("points", "children"),
-        [Input("graph", "relayoutData"), Input("graph", "figure")],
-        prevent_initial_call=True,
+        [
+            Input("graph", "relayoutData"), 
+            Input("graph", "figure")
+        ],
+        prevent_initial_call=False,
     )
     def zoomed_points(relayoutData, figure):
         if not figure or not relayoutData or "xaxis.range[0]" not in relayoutData:
@@ -448,7 +463,6 @@ def register_callbacks(app):
                 * {ranges["y"][0]}
              * {ranges["y"][1]}
         """
-
         return p
 
     # callback for printing store at the bottom
@@ -602,20 +616,22 @@ def register_callbacks(app):
     @app.callback(
         Output("data", "children"),
         [
-            Input("config-store", "data"),
-            Input("graph", "figure"),
+            # Input("config-store", "data"),
+            # Input("graph", "figure"),
             Input("switch-squeezedata", "value"),
             Input("switch-showhexdata", "value"),
             Input("switch-wraptext", "value"),
             Input("response_s", "value"),
             Input("response_e", "value"),
+            Input('tabs', 'value')
         ],
-        prevent_initial_call=True,
+        prevent_initial_call=False,
     )
-    def update_data(store, figure, squeeze, showhex, wraptext, response_s, response_e):
+    # def update_data(store, figure, squeeze, showhex, wraptext, response_s, response_e):
+    def update_data(squeeze, showhex, wraptext, response_s, response_e, tab):
         global _RECORDS
 
-        if any(x is None for x in [figure, _RECORDS]):
+        if any(x is None for x in [_RECORDS]):
             raise PreventUpdate
 
         # squeeze data (or not)
@@ -629,7 +645,7 @@ def register_callbacks(app):
 
         for column in columns:
             fields.append(column)
-            if column in ["id", "color", "normal", "delay", "length", "power", "rlen"]:
+            if column in ["id", "color", "normal", "delay", "length", "power", "rlen", "x", "y", "z"]:
                 configs.append(
                     {
                         "autoSize": True,
@@ -751,13 +767,68 @@ def register_callbacks(app):
                 "animateRows": False,
                 "alwaysShowHorizontalScroll": True,
                 "autoSizeStrategy": resize_strategy,
-                "enableCellTextSelection": True,
                 "ensureDomOrder": True,
+
+
+                "enableCellTextSelection": True,
+                "enableRangeSelection": True,
+                "cellSelection": True,
+                "suppressCopyRowsToClipboard": False,
+                "suppressCopySingleCellRanges": False,
             },
-            style={"height": "1000px"},
+            style={"height": "1000px"}
+
         )
 
         return data
+    
+    @app.callback(
+        Output("query-output", "children"),
+        Input("query-button", "n_clicks"),
+        Input("select-input", "n_submit"),
+        Input("where-input", "n_submit"),
+        State("select-input", "value"),
+        State("where-input", "value"),
+        prevent_initial_call=True
+    )
+    def execute_query(n_clicks, n_submit1, n_submit2, select_cols, where_condition):
+        
+        
+        con = sqlite3.connect(f"{_config.directory}/{_config.database}")
+        con.create_function("match_string", 2, match_string)
+        con.create_function("match_hex", 2, match_hex)
+
+        if not where_condition:
+            query = f"SELECT {select_cols} FROM experiments"
+        else:
+            query = f"SELECT {select_cols} FROM experiments WHERE {where_condition}"
+
+        # Build query        
+        try:
+            df = pd.read_sql(query, con)
+            con.close()
+        except Exception as e:
+            sys.exit(e)
+        
+        return df.head(100).to_string(index=False)
+
+
+        # # read stuff from database
+        # try:
+        #     df = pd.read_sql(query, con)
+        #     con.close()
+        # except:
+        #     raise PreventUpdate
+
+        # # add some noise
+        # exclude_from_jitter = ["color"]
+        # if config.x not in exclude_from_jitter and config.y not in exclude_from_jitter:
+        #     df[config.x] += np.random.normal(0, config.jitter, df.shape[0])
+        #     df[config.y] += np.random.normal(0, config.jitter, df.shape[0])
+
+
+        # # store records from global
+        # _RECORDS = df.to_dict("records")
 
 
 #
@@ -779,18 +850,43 @@ def callback_func3(value):
 
 def create_layout(app):
 
+    app.layout = html.Div([
+        dcc.Store(id="config-store", data=asdict(_config)),
+        html.Div(
+            [
+                html.H4("Research by Raelize"),
+            ],
+            style={"width": "80%", "border-style": "none", "margin": "0 auto"},
+        ),
+        html.Div([
+            dcc.Tabs(id="tabs", value='tab-graph', children=[
+                dcc.Tab(label='Graph', value='tab-graph'),
+                dcc.Tab(label='Data', value='tab-data'),
+                dcc.Tab(label='Information', value='tab-information'),
+                dcc.Tab(label='Database', value='tab-database'),
+            ]),
+        ],
+        style={"width": "80%", "border-style": "none", "margin": "0 auto"},
+        ),
 
-    app.layout = html.Div(
-        [
-            dcc.Store(id="config-store", data=asdict(_config)),
-            html.Div(
-                [
-                    html.H4("Research by Raelize"),
-                ],
-                style={"width": "80%", "border-style": "none", "margin": "0 auto"},
-            ),
-            html.Div(
-                [
+        html.Div(id='tabs-content')
+    ], 
+        style={
+            "width": "100%",
+            "border-style": "none",
+            "margin-top": "100px",
+            "margin-bottom": "100px",
+        },
+    
+    )
+
+    @app.callback(
+        Output('tabs-content', 'children'),
+        Input('tabs', 'value')
+    )
+    def render_content(tab):
+            if tab == 'tab-graph':
+                content = html.Div([
                     dbc.Card(
                         dbc.CardBody(
                             [
@@ -887,7 +983,10 @@ def create_layout(app):
                             [
                                 html.Center(
                                     [
-                                        dcc.Graph(id="graph", style={"width": "80%"}),
+                                        dcc.Graph(
+                                            id="graph", 
+                                            config={'displayModeBar': True},
+                                            style={"width": "80%"}),
                                     ]
                                 ),
                             ]
@@ -931,6 +1030,11 @@ def create_layout(app):
                             ]
                         )
                     ),
+                ],
+                style={"width": "80%", "border-style": "none", "margin": "0 auto"},
+                )
+            elif tab == 'tab-data':
+                content = html.Div([
                     dbc.Card(
                         dbc.CardBody(
                             [
@@ -986,6 +1090,11 @@ def create_layout(app):
                             ]
                         )
                     ),
+                ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
+                
+                return content
+            elif tab == 'tab-information':
+                content = html.Div([
                     dbc.Card(
                         [
                             dbc.CardHeader("Arguments:"),
@@ -1015,18 +1124,47 @@ def create_layout(app):
                                 ]
                             ),
                         ]
-                    ),
-                ],
-                style={"width": "80%", "border-style": "none", "margin": "0 auto"},
-            ),
-        ],
-        style={
-            "width": "100%",
-            "border-style": "none",
-            "margin-top": "100px",
-            "margin-bottom": "100px",
-        },
-    )
+                    )
+                ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
+                return content
+            elif tab == 'tab-database':
+                content = html.Div([
+                    dbc.Card([
+                        dbc.CardBody([
+                            # All on one line
+                            html.Div([
+                                html.Span("SELECT ", style={"marginRight": "5px", "fontWeight": "bold"}),
+                                dbc.Input(
+                                    id="select-input",
+                                    type="text",
+                                    value="*",
+                                    placeholder="columns",
+                                    style={"width": "150px", "display": "inline-block", "marginRight": "5px"}
+                                ),
+                                html.Span(" FROM experiments WHERE ", style={"margin": "0 5px", "fontWeight": "bold"}),
+                                dbc.Input(
+                                    id="where-input",
+                                    type="text",
+                                    value="",
+                                    placeholder="",
+                                    style={"width": "1200px", "display": "inline-block", "marginRight": "10px"}
+                                ),
+                                dbc.Button(
+                                    "Execute",
+                                    id="query-button",
+                                    n_clicks=0,
+                                    color="primary",
+                                    style={"display": "inline-block"}
+                                ),
+                            ], style={"display": "flex", "alignItems": "center"}),
+                        ])
+                    ]),
+                    
+                    # Plain text output
+                    html.Div(id="query-output", style={"margin": "20px", "whiteSpace": "pre-wrap"})
+                ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
+            
+            return content
 
 
 def check_env() -> None:
@@ -1040,7 +1178,10 @@ def check_env() -> None:
 # App
 #
 
-app = Dash(__name__)
+# Note: i've added suppress_callback_exceptions=True here as with tabs some elements may be not present.
+# Another option would be to use a validated layout which prevents the callback exceptions.
+
+app = Dash(__name__, suppress_callback_exceptions=True)
 app.css.config.serve_locally = True
 app.scripts.config.serve_locally = True
 server = app.server
