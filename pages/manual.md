@@ -1,10 +1,14 @@
 # Manual
 
+---
+
 This is the manual the Raelize TAoFI-Analyzer.
 
 ## Graph
 
-The graph is created from the data read from the database with FI experiments.
+---
+
+The graph tab is created from the data read from the database with FI experiments.
 
 You can filter the database before it's fed into the graph engine by extending the query at the top.
 
@@ -20,9 +24,17 @@ At the bottom of the graph you can recolor the experiments fed into the graph en
 
 The first field is the qualifier (i.e., `re.search(<qualifier>, response))`) and the second field is the label.
 
+- `bla`: response contains `bla`
+- `\x41\x41`: response contains `AA`
+- `^.{0,1000}$`: response length between 0 an 1000
+- `^.{1000,}$`: response length larger than 1000
+- `.*`: catch all (useful for recoloring everything to yellow before applying other colors)
+
 ## Data
 
-The data is synced with the graph configuration.
+---
+
+The data tab is synced with the graph configuration.
 
 You can squeeze the data (i.e., combine experiment with the same responses) or not.
 
@@ -36,8 +48,16 @@ For each row of data, you can:
 
 ## Information
 
-...
+---
+
+The information tab lists information related to the selected database.
+
+- arguments if available (i.e., in the `metadata` table of the database)
+- points if selected in the graph (i.e., on zoom or selection)
+- contents of Dash store used by the analyzer
 
 ## Database
 
-...
+---
+
+The database tab can be used to execute raw queries on the selected database.
