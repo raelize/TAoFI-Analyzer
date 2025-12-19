@@ -406,8 +406,10 @@ def update_global_records(config):
     # add some noise
     exclude_from_jitter = ["color"]
     if config.x not in exclude_from_jitter and config.y not in exclude_from_jitter:
-        df[config.x] += np.random.normal(0, config.jitter, df.shape[0])
-        df[config.y] += np.random.normal(0, config.jitter, df.shape[0])
+        # df[config.x] += np.random.normal(0, config.jitter, df.shape[0])
+        # df[config.y] += np.random.normal(0, config.jitter, df.shape[0])
+        df[config.x] += np.random.normal(0, config.jitter, len(df))
+        df[config.y] += np.random.normal(0, config.jitter, len(df))
 
 
     # store records from global
@@ -814,24 +816,6 @@ def register_callbacks(app):
         return df.head(100).to_string(index=False)
 
 
-        # # read stuff from database
-        # try:
-        #     df = pd.read_sql(query, con)
-        #     con.close()
-        # except:
-        #     raise PreventUpdate
-
-        # # add some noise
-        # exclude_from_jitter = ["color"]
-        # if config.x not in exclude_from_jitter and config.y not in exclude_from_jitter:
-        #     df[config.x] += np.random.normal(0, config.jitter, df.shape[0])
-        #     df[config.y] += np.random.normal(0, config.jitter, df.shape[0])
-
-
-        # # store records from global
-        # _RECORDS = df.to_dict("records")
-
-
 #
 # Layout
 #
@@ -863,6 +847,7 @@ def create_layout(app):
                 dcc.Tab(label='Data', value='tab-data'),
                 dcc.Tab(label='Information', value='tab-information'),
                 dcc.Tab(label='Database', value='tab-database'),
+                dcc.Tab(label='Manual', value='tab-manual'),
             ]),
         ],
         style={"width": "80%", "border-style": "none", "margin": "0 auto"},
@@ -1041,62 +1026,63 @@ def create_layout(app):
             )
         elif tab == 'tab-data':
             content = html.Div([
-                dbc.Card(
-                    dbc.CardBody(
-                        [
-                            dbc.Switch(
-                                id="switch-squeezedata",
-                                value=True,
-                                label="Squeeze Data",
-                                style={
-                                    "display": "inline-block",
-                                    "marginRight": "20px",
-                                },
-                            ),
-                            dbc.Switch(
-                                id="switch-showhexdata",
-                                value=False,
-                                label="Show Hex",
-                                style={
-                                    "display": "inline-block",
-                                    "marginRight": "20px",
-                                },
-                            ),
-                            dbc.Switch(
-                                id="switch-wraptext",
-                                value=False,
-                                label="Wrap Text",
-                                style={
-                                    "display": "inline-block",
-                                    "marginRight": "20px",
-                                },
-                            ),
-                            dcc.Input(
-                                id="response_s",
-                                type="number",
-                                placeholder="start",
-                                style={"width": "50px", "marginRight": "20px"},
-                                persistence=True,
-                            ),
-                            dcc.Input(
-                                id="response_e",
-                                type="number",
-                                placeholder="end",
-                                style={"width": "50px", "marginRight": "20px"},
-                                persistence=True,
-                            ),
-                            html.Div(
-                                id="data",
-                                style={
-                                    "width": "100%",
-                                    "height": "100%",
-                                    "border-style": "none",
-                                },
-                            ),
-                        ]
-                    )
-                ),
-            ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
+                        dbc.Card(
+                            dbc.CardBody([
+                                    html.Div([
+                                        dbc.Switch(
+                                            id="switch-squeezedata",
+                                            value=True,
+                                            label="Squeeze Data",
+                                            className="d-inline-block me-3"
+                                        ),
+                                        dbc.Switch(
+                                            id="switch-showhexdata",
+                                            value=False,
+                                            label="Show Hex",
+                                            className="d-inline-block me-3"
+                                        ),
+                                        dbc.Switch(
+                                            id="switch-wraptext",
+                                            value=False,
+                                            label="Wrap response",
+                                            className="d-inline-block me-3"
+                                        ),
+                                        dcc.Input(
+                                            id="response_s",
+                                            type="number",
+                                            placeholder="start",
+                                            className="d-inline-block me-2",
+                                            persistence=True,
+                                        ),
+                                        dcc.Input(
+                                            id="response_e",
+                                            type="number",
+                                            placeholder="end",
+                                            className="d-inline-block me-2",
+                                            persistence=True,
+                                        ),
+                                    ], className="mb-0"),
+                                ]
+                            )
+                        ),
+                        dbc.Card(
+                            dbc.CardBody([
+                                html.Div(
+                                        id="data",
+                                        className="border-0 p-2 bg-light rounded",
+                                        style={
+                                            "minHeight": "400px",
+                                            "height": "100%",
+                                            "i": "100%",
+                                            "fontFamily": "monospace",
+                                            "whiteSpace": "pre-wrap",
+                                            "overflowY": "auto",
+                                            "border-style": "none",
+                                        }
+                                    ),
+                            ]),
+                        )
+                    ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
             
             return content
         elif tab == 'tab-information':
@@ -1169,7 +1155,22 @@ def create_layout(app):
                 # Plain text output
                 html.Div(id="query-output", style={"margin": "20px", "whiteSpace": "pre-wrap"})
             ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
-    
+        elif tab == 'tab-manual':
+            with open('pages/manual.md', 'r', encoding='utf-8') as f:
+                manual_text = f.read()
+            
+            content = html.Div([
+                dbc.Card([
+                    dbc.CardBody([
+                         html.Div([
+                             dcc.Markdown(manual_text)
+                         ])
+                    ])
+                ])
+            ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
+
+                             
+
         return content
 
 def check_env() -> None:

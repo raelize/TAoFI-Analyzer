@@ -23,7 +23,7 @@ def recolor(record, regex, new_color, fixgreen):
         return record["color"]
     if fixgreen and record["color"] == "G":
         return record["color"]
-    elif re.search(regex.encode(), record["response"]):
+    elif re.search(regex.encode(), record["response"], re.DOTALL):
         return new_color
     else:
         return record["color"]

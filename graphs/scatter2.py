@@ -42,7 +42,11 @@ def scatter2_func(x, y, fixgreen, _RECORDS, config, _COLORS, *color_states):
     # Create scatter plot
     try:
         fig = px.scatter(
-            _RECORDS, x=x, y=y, color="color", render_mode="webgl",
+            _RECORDS, 
+            x=x, 
+            y=y, 
+            color="color", 
+            render_mode="webgl",
             labels={
                 "color": f"Classification ({len(_RECORDS):,})",
                 x: f"{x} {AXIS_LABELS.get(x, '')}",
