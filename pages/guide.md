@@ -56,8 +56,8 @@ The information tab lists information related to the selected database.
 - points if selected in the graph (i.e., on zoom or selection)
 - contents of Dash store used by the analyzer
 
-## Database
+## Guide
 
 ---
 
-The database tab can be used to execute raw queries on the selected database.
+The guide tab can be used to execute raw queries on the selected database.

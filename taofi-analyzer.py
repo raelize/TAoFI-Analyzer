@@ -847,7 +847,7 @@ def create_layout(app):
                 dcc.Tab(label='Data', value='tab-data'),
                 dcc.Tab(label='Information', value='tab-information'),
                 dcc.Tab(label='Database', value='tab-database'),
-                dcc.Tab(label='Manual', value='tab-manual'),
+                dcc.Tab(label='Guide', value='tab-guide'),
             ]),
         ],
         style={"width": "80%", "border-style": "none", "margin": "0 auto"},
@@ -1155,15 +1155,15 @@ def create_layout(app):
                 # Plain text output
                 html.Div(id="query-output", style={"margin": "20px", "whiteSpace": "pre-wrap"})
             ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
-        elif tab == 'tab-manual':
-            with open('pages/manual.md', 'r', encoding='utf-8') as f:
-                manual_text = f.read()
+        elif tab == 'tab-guide':
+            with open('pages/guide.md', 'r', encoding='utf-8') as f:
+                guide_text = f.read()
             
             content = html.Div([
                 dbc.Card([
                     dbc.CardBody([
                          html.Div([
-                             dcc.Markdown(manual_text)
+                             dcc.Markdown(guide_text)
                          ])
                     ])
                 ])
