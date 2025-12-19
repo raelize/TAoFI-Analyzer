@@ -66,11 +66,16 @@ def scatter_func(x, y, fixgreen, _RECORDS, config, _COLORS, *color_states):
             y=y,
             render_mode="webgl",
             color="color",
-            labels={
-                "color": f"Classification ({len(_RECORDS):,})",
-                x: f"{x} {give_xy_label(x)}",
-                y: f"{y} {give_xy_label(y)}",
-            },
+            # labels={
+            #     "color": f"Classification ({len(_RECORDS):,})",
+            #     x: f"{x} {give_xy_label(x)}",
+            #     y: f"{y} {give_xy_label(y)}",
+            # },
+            # labels={
+            #     "color": f"Classification ({len(_RECORDS):,})",
+            #     x: f"{x} {give_xy_label(x)}",
+            #     y: f"{y} {give_xy_label(y)}",
+            # },
             color_discrete_map={
                 "P": "pink",
                 "G": "green",
@@ -91,20 +96,40 @@ def scatter_func(x, y, fixgreen, _RECORDS, config, _COLORS, *color_states):
         
         raise PreventUpdate
 
-    # update title of graph
-    # fig.update_layout(title_text=config.database[:-7], title_x=0.5, title_y=0.95)
-    fig.update_layout(title_text="")
-    fig.update_layout(width=1000, height=1000, autosize=False)
     fig.update_layout(
-        legend = dict(font = dict(size = 15)),
-        legend_title = dict(font = dict(size = 15)),
+        title_text="",
+        width=None, 
+        height=1000, 
+        autosize=True,
+        margin=dict(l=0, r=0, t=0, b=0),
+
+        legend = dict(
+            orientation="h",
+            itemsizing='constant',
+            yanchor="bottom",
+            y=-0.1,
+            xanchor="center",
+            x=0.5,
+            font = dict(
+                size = 15
+            ),
+            title = dict(
+                side = 'top',
+                text = f"Classification ( {len(_RECORDS):,} ):",
+                font = dict(
+                    size = 15
+                ),
+            ),
+        ),
     )
-    fig.update_layout(legend= {'itemsizing': 'constant'})
 
     if config.x == "x" or config.y == "y":
         fig.update_xaxes(title_standoff=0, side="top")
         fig.update_yaxes(title_standoff=0, autorange="reversed")
-
+        
+        # TODO: need to check if this is actually keeping the aspect ratio correctly
+        fig.update_layout(width=1000, height=1000, autosize=False)
+    
     # Build legend labels with counts and percentages
     labels = {}
     total_records = len(_RECORDS)
