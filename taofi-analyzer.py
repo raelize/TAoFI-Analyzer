@@ -18,6 +18,7 @@ import pandas as pd
 import plotly.express as px
 from dash import Dash, Input, Output, State, dcc, html
 from dash import callback_context as ctx
+from dash import no_update
 from dash.exceptions import PreventUpdate
 from dash_ag_grid import AgGrid
 from dataclasses_json import dataclass_json
@@ -846,8 +847,6 @@ def callback_func2(value):
 def callback_func3(value):
     return result3
 
-
-
 def create_layout(app):
 
     app.layout = html.Div([
@@ -882,290 +881,296 @@ def create_layout(app):
 
     @app.callback(
         Output('tabs-content', 'children'),
-        Input('tabs', 'value')
+        Input('tabs', 'value'),
+        State('config-store', 'data')
     )
-    def render_content(tab):
-            if tab == 'tab-graph':
-                content = html.Div([
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.Div(
-                                    [
-                                        html.Button(
-                                            "Update",
-                                            id="update-button",
-                                            n_clicks=0,
-                                            style={"width": "100px"},
-                                        ),
-                                        html.Datalist(
-                                            id="examples",
-                                            children=[
-                                                html.Option(
-                                                    value="match_string(response, 'ets')"
-                                                ),
-                                                html.Option(
-                                                    value="match_hex(response, '661b')"
-                                                ),
-                                                html.Option(value="color = 'G'"),
-                                                html.Option(value="delay > 100"),
-                                                html.Option(value="length > 100"),
-                                            ],
-                                        ),
-                                        dcc.Input(
-                                            id="query-input",
-                                            type="text",
-                                            list="examples",
-                                            value="",
-                                            style={
-                                                "width": "100%",
-                                                "display": "inline-block",
-                                            },
-                                            placeholder="SELECT * FROM experiments WHERE",
-                                            persistence=True,
-                                        ),
-                                    ],
-                                    style={"display": "flex", "alignItems": "center"},
-                                )
-                            ]
-                        )
-                    ),
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                dcc.Dropdown(
-                                    id="database-dropdown",
-                                    style={"width": "100%"},
-                                    options=get_databases(_config.directory),
-                                    placeholder="database",
-                                    value=_config.database or None,
-                                ),
-                                html.Div(
-                                    [
-                                        dcc.Dropdown(
-                                            id="x-dropdown",
-                                            style={"width": "100%"},
-                                            placeholder="x-axis",
-                                            value=_config.x or None,
-                                        ),
-                                        dcc.Dropdown(
-                                            id="y-dropdown",
-                                            style={"width": "100%"},
-                                            placeholder="y-axis",
-                                            value=_config.y or None,
-                                        ),
-                                        dcc.Input(
-                                            id="jitter-input",
-                                            type="number",
-                                            value=0,
-                                            style={"width": "100%"},
-                                        ),
-                                    ],
-                                    style=dict(display="flex"),
-                                ),
-                                
-                                dcc.Dropdown(
-                                    id="graph-dropdown",
-                                    style={"width": "100%"},
-                                    options=[
-                                        {'label': 'scatter', 'value': 'scatter'},\
-                                        {'label': 'scatter2', 'value': 'scatter2'},
-                                        {'label': 'simple', 'value': 'simple'},
-                                    ],
-                                    # placeholder="option1",
-                                    value='scatter'
-                                ),
-                            ]
-                        )
-                    ),
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.Center(
-                                    [
-                                        dcc.Graph(
-                                            id="graph", 
-                                            config={'displayModeBar': True},
-                                            style={"width": "80%"}),
-                                    ]
-                                ),
-                            ]
-                        )
-                    ),
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.Span(
-                                    dbc.Switch(
-                                        id="switch-fixgreen",
-                                        value=True,
-                                        label="Do not recolor green experiments",
-                                        style={},
-                                    )
-                                ),
-                                *(
-                                    input_component
-                                    for color in _COLORS
-                                    for input_component in [
-                                        dcc.Input(
-                                            id=f"recolor-{color}",
-                                            type="text",
-                                            placeholder=f"{color}",
-                                            style={"width": "15%"},
-                                            persistence=True,
-                                        ),
-                                        dcc.Input(
-                                            id=f"recolor-{color}-label",
-                                            type="text",
-                                            placeholder=f"{color}-label",
-                                            style={
-                                                "width": "15%",
-                                                "margin-right": "10px",
-                                                "margin-bottom": "10px",
-                                            },
-                                            persistence=True,
-                                        ),
-                                    ]
-                                ),
-                            ]
-                        )
-                    ),
-                ],
-                style={"width": "80%", "border-style": "none", "margin": "0 auto"},
-                )
-            elif tab == 'tab-data':
-                content = html.Div([
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                dbc.Switch(
-                                    id="switch-squeezedata",
-                                    value=True,
-                                    label="Squeeze Data",
-                                    style={
-                                        "display": "inline-block",
-                                        "marginRight": "20px",
-                                    },
-                                ),
-                                dbc.Switch(
-                                    id="switch-showhexdata",
-                                    value=False,
-                                    label="Show Hex",
-                                    style={
-                                        "display": "inline-block",
-                                        "marginRight": "20px",
-                                    },
-                                ),
-                                dbc.Switch(
-                                    id="switch-wraptext",
-                                    value=False,
-                                    label="Wrap Text",
-                                    style={
-                                        "display": "inline-block",
-                                        "marginRight": "20px",
-                                    },
-                                ),
-                                dcc.Input(
-                                    id="response_s",
-                                    type="number",
-                                    placeholder="start",
-                                    style={"width": "50px", "marginRight": "20px"},
-                                    persistence=True,
-                                ),
-                                dcc.Input(
-                                    id="response_e",
-                                    type="number",
-                                    placeholder="end",
-                                    style={"width": "50px", "marginRight": "20px"},
-                                    persistence=True,
-                                ),
-                                html.Div(
-                                    id="data",
-                                    style={
-                                        "width": "100%",
-                                        "height": "100%",
-                                        "border-style": "none",
-                                    },
-                                ),
-                            ]
-                        )
-                    ),
-                ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
-                
-                return content
-            elif tab == 'tab-information':
-                content = html.Div([
-                    dbc.Card(
+    def render_content(tab, store):
+        if tab == 'tab-graph':
+
+            # apply state when available
+            database = store.get('database') if store else None
+            x = store.get('x') if store else None
+            y = store.get('y') if store else None
+
+            content = html.Div([
+                dbc.Card(
+                    dbc.CardBody(
                         [
-                            dbc.CardHeader("Arguments:"),
-                            dbc.CardBody(
+                            html.Div(
                                 [
-                                    dcc.Markdown("", id="argv"),
-                                ]
+                                    html.Button(
+                                        "Update",
+                                        id="update-button",
+                                        n_clicks=0,
+                                        style={"width": "100px"},
+                                    ),
+                                    html.Datalist(
+                                        id="examples",
+                                        children=[
+                                            html.Option(
+                                                value="match_string(response, 'ets')"
+                                            ),
+                                            html.Option(
+                                                value="match_hex(response, '661b')"
+                                            ),
+                                            html.Option(value="color = 'G'"),
+                                            html.Option(value="delay > 100"),
+                                            html.Option(value="length > 100"),
+                                        ],
+                                    ),
+                                    dcc.Input(
+                                        id="query-input",
+                                        type="text",
+                                        list="examples",
+                                        value="",
+                                        style={
+                                            "width": "100%",
+                                            "display": "inline-block",
+                                        },
+                                        placeholder="SELECT * FROM experiments WHERE",
+                                        persistence=True,
+                                    ),
+                                ],
+                                style={"display": "flex", "alignItems": "center"},
+                            )
+                        ]
+                    )
+                ),
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            dcc.Dropdown(
+                                id="database-dropdown",
+                                style={"width": "100%"},
+                                options=get_databases(_config.directory),
+                                placeholder="database",
+                                value=_config.database or database,
+                            ),
+                            html.Div(
+                                [
+                                    dcc.Dropdown(
+                                        id="x-dropdown",
+                                        style={"width": "100%"},
+                                        placeholder="x-axis",
+                                        value=_config.x or x,
+                                    ),
+                                    dcc.Dropdown(
+                                        id="y-dropdown",
+                                        style={"width": "100%"},
+                                        placeholder="y-axis",
+                                        value=_config.y or y,
+                                    ),
+                                    dcc.Input(
+                                        id="jitter-input",
+                                        type="number",
+                                        value=0,
+                                        style={"width": "100%"},
+                                    ),
+                                ],
+                                style=dict(display="flex"),
+                            ),
+                            
+                            dcc.Dropdown(
+                                id="graph-dropdown",
+                                style={"width": "100%"},
+                                options=[
+                                    {'label': 'scatter', 'value': 'scatter'},\
+                                    {'label': 'scatter2', 'value': 'scatter2'},
+                                    {'label': 'simple', 'value': 'simple'},
+                                ],
+                                # placeholder="option1",
+                                value='scatter'
                             ),
                         ]
-                    ),
-                    dbc.Card(
+                    )
+                ),
+                dbc.Card(
+                    dbc.CardBody(
                         [
-                            dbc.CardHeader("Points:"),
-                            dbc.CardBody(
+                            html.Center(
                                 [
-                                    dcc.Markdown("", id="points"),
-                                ]
-                            ),
-                        ]
-                    ),
-                    dbc.Card(
-                        [
-                            dbc.CardHeader("Store:"),
-                            dbc.CardBody(
-                                [
-                                    dcc.Markdown("", id="printstore"),
+                                    dcc.Graph(
+                                        id="graph", 
+                                        config={'displayModeBar': True},
+                                        style={"width": "80%"}),
                                 ]
                             ),
                         ]
                     )
-                ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
-                return content
-            elif tab == 'tab-database':
-                content = html.Div([
-                    dbc.Card([
-                        dbc.CardBody([
-                            # All on one line
-                            html.Div([
-                                html.Span("SELECT ", style={"marginRight": "5px", "fontWeight": "bold"}),
-                                dbc.Input(
-                                    id="select-input",
-                                    type="text",
-                                    value="*",
-                                    placeholder="columns",
-                                    style={"width": "150px", "display": "inline-block", "marginRight": "5px"}
-                                ),
-                                html.Span(" FROM experiments WHERE ", style={"margin": "0 5px", "fontWeight": "bold"}),
-                                dbc.Input(
-                                    id="where-input",
-                                    type="text",
-                                    value="",
-                                    placeholder="",
-                                    style={"width": "1200px", "display": "inline-block", "marginRight": "10px"}
-                                ),
-                                dbc.Button(
-                                    "Execute",
-                                    id="query-button",
-                                    n_clicks=0,
-                                    color="primary",
-                                    style={"display": "inline-block"}
-                                ),
-                            ], style={"display": "flex", "alignItems": "center"}),
-                        ])
-                    ]),
-                    
-                    # Plain text output
-                    html.Div(id="query-output", style={"margin": "20px", "whiteSpace": "pre-wrap"})
-                ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
+                ),
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.Span(
+                                dbc.Switch(
+                                    id="switch-fixgreen",
+                                    value=True,
+                                    label="Do not recolor green experiments",
+                                    style={},
+                                )
+                            ),
+                            *(
+                                input_component
+                                for color in _COLORS
+                                for input_component in [
+                                    dcc.Input(
+                                        id=f"recolor-{color}",
+                                        type="text",
+                                        placeholder=f"{color}",
+                                        style={"width": "15%"},
+                                        persistence=True,
+                                    ),
+                                    dcc.Input(
+                                        id=f"recolor-{color}-label",
+                                        type="text",
+                                        placeholder=f"{color}-label",
+                                        style={
+                                            "width": "15%",
+                                            "margin-right": "10px",
+                                            "margin-bottom": "10px",
+                                        },
+                                        persistence=True,
+                                    ),
+                                ]
+                            ),
+                        ]
+                    )
+                ),
+            ],
+            style={"width": "80%", "border-style": "none", "margin": "0 auto"},
+            )
+        elif tab == 'tab-data':
+            content = html.Div([
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            dbc.Switch(
+                                id="switch-squeezedata",
+                                value=True,
+                                label="Squeeze Data",
+                                style={
+                                    "display": "inline-block",
+                                    "marginRight": "20px",
+                                },
+                            ),
+                            dbc.Switch(
+                                id="switch-showhexdata",
+                                value=False,
+                                label="Show Hex",
+                                style={
+                                    "display": "inline-block",
+                                    "marginRight": "20px",
+                                },
+                            ),
+                            dbc.Switch(
+                                id="switch-wraptext",
+                                value=False,
+                                label="Wrap Text",
+                                style={
+                                    "display": "inline-block",
+                                    "marginRight": "20px",
+                                },
+                            ),
+                            dcc.Input(
+                                id="response_s",
+                                type="number",
+                                placeholder="start",
+                                style={"width": "50px", "marginRight": "20px"},
+                                persistence=True,
+                            ),
+                            dcc.Input(
+                                id="response_e",
+                                type="number",
+                                placeholder="end",
+                                style={"width": "50px", "marginRight": "20px"},
+                                persistence=True,
+                            ),
+                            html.Div(
+                                id="data",
+                                style={
+                                    "width": "100%",
+                                    "height": "100%",
+                                    "border-style": "none",
+                                },
+                            ),
+                        ]
+                    )
+                ),
+            ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
             
             return content
-
+        elif tab == 'tab-information':
+            content = html.Div([
+                dbc.Card(
+                    [
+                        dbc.CardHeader("Arguments:"),
+                        dbc.CardBody(
+                            [
+                                dcc.Markdown("", id="argv"),
+                            ]
+                        ),
+                    ]
+                ),
+                dbc.Card(
+                    [
+                        dbc.CardHeader("Points:"),
+                        dbc.CardBody(
+                            [
+                                dcc.Markdown("", id="points"),
+                            ]
+                        ),
+                    ]
+                ),
+                dbc.Card(
+                    [
+                        dbc.CardHeader("Store:"),
+                        dbc.CardBody(
+                            [
+                                dcc.Markdown("", id="printstore"),
+                            ]
+                        ),
+                    ]
+                )
+            ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
+            return content
+        elif tab == 'tab-database':
+            content = html.Div([
+                dbc.Card([
+                    dbc.CardBody([
+                        # All on one line
+                        html.Div([
+                            html.Span("SELECT ", style={"marginRight": "5px", "fontWeight": "bold"}),
+                            dbc.Input(
+                                id="select-input",
+                                type="text",
+                                value="*",
+                                placeholder="columns",
+                                style={"width": "150px", "display": "inline-block", "marginRight": "5px"}
+                            ),
+                            html.Span(" FROM experiments WHERE ", style={"margin": "0 5px", "fontWeight": "bold"}),
+                            dbc.Input(
+                                id="where-input",
+                                type="text",
+                                value="",
+                                placeholder="",
+                                style={"width": "1200px", "display": "inline-block", "marginRight": "10px"}
+                            ),
+                            dbc.Button(
+                                "Execute",
+                                id="query-button",
+                                n_clicks=0,
+                                color="primary",
+                                style={"display": "inline-block"}
+                            ),
+                        ], style={"display": "flex", "alignItems": "center"}),
+                    ])
+                ]),
+                
+                # Plain text output
+                html.Div(id="query-output", style={"margin": "20px", "whiteSpace": "pre-wrap"})
+            ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
+    
+        return content
 
 def check_env() -> None:
     required = ["ANALYZER_DIRECTORY"]
