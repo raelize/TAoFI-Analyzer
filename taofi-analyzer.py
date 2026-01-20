@@ -792,26 +792,26 @@ def register_callbacks(app):
         Input("where-input", "n_submit"),
         State("select-input", "value"),
         State("where-input", "value"),
+        State('config-store', 'data'),
         prevent_initial_call=True
     )
-    def execute_query(n_clicks, n_submit1, n_submit2, select_cols, where_condition):
+    def execute_query(n_clicks, n_submit1, n_submit2, select_cols, where_condition, data):
         
-        
-        con = sqlite3.connect(f"{_config.directory}/{_config.database}")
+        con = sqlite3.connect(f"{data['directory']}/{data['database']}")
         con.create_function("match_string", 2, match_string)
         con.create_function("match_hex", 2, match_hex)
 
         if not where_condition:
-            query = f"SELECT {select_cols} FROM experiments"
+            query = f"SELECT {select_cols} FROM experiments;"
         else:
-            query = f"SELECT {select_cols} FROM experiments WHERE {where_condition}"
+            query = f"SELECT {select_cols} FROM experiments WHERE {where_condition};"
 
         # Build query        
         try:
             df = pd.read_sql(query, con)
             con.close()
         except Exception as e:
-            sys.exit(e)
+            print(e)
         
         return df.head(100).to_string(index=False)
 
@@ -1148,12 +1148,11 @@ def create_layout(app):
                                 color="primary",
                                 style={"display": "inline-block"}
                             ),
+                            
                         ], style={"display": "flex", "alignItems": "center"}),
                     ])
                 ]),
-                
-                # Plain text output
-                html.Div(id="query-output", style={"margin": "20px", "whiteSpace": "pre-wrap"})
+                html.Pre(id='query-output')
             ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
         elif tab == 'tab-guide':
             with open('pages/guide.md', 'r', encoding='utf-8') as f:
