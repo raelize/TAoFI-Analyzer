@@ -1,124 +1,44 @@
-from dash.exceptions import PreventUpdate
-import plotly.express as px
 import re
 
-def give_xy_label(parameter):
-    labels = {
-        "normal": "(v)",
-        "normal_voltage": "(v)",
-        "length": "(ns)",
-        "glitch_length": "(ns)",
-        "delay": "(ns)",
-        "glitch_delay": "(ns)",
-        "power": "(%)",
-        "glitch_power": "(%)",
-        "voltage": "(v)",
-        "glitch_voltage": "(v)",
-    }
-    return labels.get(parameter, "")
+from dash.exceptions import PreventUpdate
+
+from graphs.common import (COLOR_CODES, build_scatter, count_colors,
+                           give_xy_label, update_legend_labels)
 
 
-def recolor(record, regex, new_color, fixgreen):
-    if regex in [None, ""]:
-        return record["color"]
-    if fixgreen and record["color"] == "G":
-        return record["color"]
-    elif re.search(regex.encode(), record["response"], re.DOTALL):
-        return new_color
-    else:
-        return record["color"]
-
-def update_legend_labels(fig, labels):
-    for entry in fig.data:
-        if entry["name"] in labels:
-            entry["name"] = labels[entry["name"]]
-
-
-def scatter_func(x, y, fixgreen, _RECORDS, config, _COLORS, *color_states):
+def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     color_values = color_states[:8]
     color_labels = color_states[8:]
 
-    # color amounts
-    colors = {
-        "P": 0,
-        "G": 0,
-        "Y": 0,
-        "M": 0,
-        "O": 0,
-        "C": 0,
-        "B": 0,
-        "Z": 0,
-        "R": 0,
-    }
-
-    color_map = dict(zip(_COLORS, ["G", "Y", "M", "O", "C", "B", "Z", "R"]))
-
-    # recolor if needed
-    for record in _RECORDS:
-        for value, color_code in zip(color_values, color_map.values()):
-            record["color"] = recolor(record, value, color_code, fixgreen)
-        colors[record["color"]] += 1
+    # recolor (vectorized: regexes run on the unique responses only)
+    colors = dataset.recolor(color_values, COLOR_CODES, fixgreen, re.DOTALL)
+    counts = count_colors(colors)
+    total_records = len(colors)
 
     try:
-        fig = px.scatter(
-            _RECORDS,
-            x=x,
-            y=y,
-            render_mode="webgl",
-            color="color",
-            # labels={
-            #     "color": f"Classification ({len(_RECORDS):,})",
-            #     x: f"{x} {give_xy_label(x)}",
-            #     y: f"{y} {give_xy_label(y)}",
-            # },
-            # labels={
-            #     "color": f"Classification ({len(_RECORDS):,})",
-            #     x: f"{x} {give_xy_label(x)}",
-            #     y: f"{y} {give_xy_label(y)}",
-            # },
-            color_discrete_map={
-                "P": "pink",
-                "G": "green",
-                "Y": "yellow",
-                "M": "magenta",
-                "O": "orange",
-                "C": "cyan",
-                "B": "blue",
-                "Z": "black",
-                "R": "red",
-            },
-            category_orders={
-                "color": ["P", "G", "Y", "M", "O", "C", "B", "Z", "R"]
-            },
-        )
+        fig = build_scatter(dataset, x, y, colors, config.jitter)
     except Exception as e:
         print(e)
-        
         raise PreventUpdate
 
     fig.update_layout(
         title_text="",
-        width=None, 
-        height=1000, 
+        width=None,
+        height=1000,
         autosize=True,
         margin=dict(l=0, r=0, t=0, b=0),
-
-        legend = dict(
+        legend=dict(
             orientation="h",
-            itemsizing='constant',
+            itemsizing="constant",
             yanchor="bottom",
             y=-0.1,
             xanchor="center",
             x=0.5,
-            font = dict(
-                size = 15
-            ),
-            title = dict(
-                side = 'top',
-                text = f"Classification ( {len(_RECORDS):,} ):",
-                font = dict(
-                    size = 15
-                ),
+            font=dict(size=15),
+            title=dict(
+                side="top",
+                text=f"Classification ( {total_records:,} ):",
+                font=dict(size=15),
             ),
         ),
     )
@@ -126,24 +46,21 @@ def scatter_func(x, y, fixgreen, _RECORDS, config, _COLORS, *color_states):
     if config.x == "x" or config.y == "y":
         fig.update_xaxes(title_standoff=0, side="top")
         fig.update_yaxes(title_standoff=0, autorange="reversed")
-        
+
         # TODO: need to check if this is actually keeping the aspect ratio correctly
         fig.update_layout(width=1000, height=1000, autosize=False)
-    
+
     # Build legend labels with counts and percentages
     labels = {}
-    total_records = len(_RECORDS)
-
-    # Create labels for each color category
-    for color_code, value, label in zip(color_map.values(), color_values, color_labels):
-        count = colors[color_code]
+    for color_code, value, label in zip(COLOR_CODES, color_values, color_labels):
+        count = counts[color_code]
         display_label = label if label else value
-        percentage = count / total_records
+        percentage = count / total_records if total_records else 0
         labels[color_code] = f"{display_label} ( {count} / {percentage:.1%} )"
 
     # Add special label for timeout
-    timeout_count = colors['P']
-    timeout_pct = timeout_count / total_records
+    timeout_count = counts["P"]
+    timeout_pct = timeout_count / total_records if total_records else 0
     labels["P"] = f"timeout ( {timeout_count} / {timeout_pct:.1%} )"
 
     update_legend_labels(fig, labels)

@@ -4,6 +4,8 @@ import os
 import re
 import sqlite3
 import sys
+import threading
+from collections import OrderedDict
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from operator import itemgetter
@@ -16,7 +18,7 @@ import dash_bootstrap_components as dbc
 import numpy as np
 import pandas as pd
 import plotly.express as px
-from dash import Dash, Input, Output, State, dcc, html
+from dash import MATCH, Dash, Input, Output, State, dcc, html
 from dash import callback_context as ctx
 from dash import no_update
 from dash.exceptions import PreventUpdate
@@ -91,8 +93,16 @@ class AnalyzerConfig:
 # Globals
 #
 
-_RECORDS = None
 _config = AnalyzerConfig()
+
+# Loaded databases and derived tables are cached per worker process (see Dataset).
+_DATASET_CACHE = OrderedDict()
+_DATASET_CACHE_SIZE = 3
+_TABLE_CACHE = OrderedDict()
+_TABLE_CACHE_SIZE = 3
+_COUNT_CACHE = {}
+_CACHE_LOCK = threading.Lock()
+_PAGE_SIZE = 100
 
 _COLORS = ["green", "yellow", "magenta", "orange", "cyan", "blue", "black", "red"]
 
@@ -115,14 +125,25 @@ for color in _COLORS:
 # Functions
 #
 
+def file_key(path):
+    """Identity of a database file: changes whenever the file is (re)written."""
+    st = os.stat(path)
+    return (os.path.abspath(path), st.st_mtime_ns, st.st_size)
+
+
 def get_number_of_experiments(directory, database):
     database_path = os.path.join(directory, database)
 
     try:
+        key = file_key(database_path)
+        if key in _COUNT_CACHE:
+            return _COUNT_CACHE[key]
         with closing(sqlite3.connect(database_path)) as connection:
             with closing(connection.cursor()) as cursor:
                 cursor.execute("SELECT COUNT(*) FROM experiments")
-                return cursor.fetchone()[0]
+                count = cursor.fetchone()[0]
+        _COUNT_CACHE[key] = count
+        return count
     except Exception as e:
         print("ERROR (get_number_of_experiments): %s" % (e))
 
@@ -235,131 +256,323 @@ def slice_response(response, s, e):
     return response
 
 
-def generate_data(records, squeeze_records, response_s, response_e):
-    v = VariableNames(records[0])
+class Dataset:
+    """The experiments of one database (optionally filtered by the query), as a DataFrame.
 
-    has_normal = glitch_parameter_present(records[0], v.normal)
-    has_length = glitch_parameter_present(records[0], v.length)
-    has_power = glitch_parameter_present(records[0], v.power)
-    has_voltage = glitch_parameter_present(records[0], v.voltage)
-    has_reset = glitch_parameter_present(records[0], v.reset)
-    has_x = glitch_parameter_present(records[0], v.x)
-    has_y = glitch_parameter_present(records[0], v.y)
-    has_z = glitch_parameter_present(records[0], v.z)
+    Responses are factorized once so that recolor regexes only run on the
+    unique responses; the resulting masks are cached per regex.
+    """
+
+    def __init__(self, key, df):
+        self.key = key
+        self.df = df
+        self.names = VariableNames(df.columns)
+        responses = df[self.names.response]
+        self.resp_codes, self.resp_uniques = pd.factorize(responses, use_na_sentinel=False)
+        self.resp_uniques = np.asarray(self.resp_uniques, dtype=object)
+        self.base_colors = df[self.names.color].to_numpy(dtype=object)
+        # colors as shown in the last rendered graph (recolor applied)
+        self.colors = self.base_colors
+        self.color_version = 0
+        self._mask_cache = {}
+        self._lock = threading.Lock()
+
+    def match_mask(self, regex, flags=0):
+        """Boolean mask over all experiments whose response matches ``regex``."""
+        cache_key = (regex, flags)
+        with self._lock:
+            mask = self._mask_cache.get(cache_key)
+        if mask is None:
+            pattern = re.compile(regex.encode(), flags)
+            unique_mask = np.fromiter(
+                (pattern.search(r) is not None for r in self.resp_uniques),
+                dtype=bool,
+                count=len(self.resp_uniques),
+            )
+            mask = unique_mask[self.resp_codes]
+            with self._lock:
+                self._mask_cache[cache_key] = mask
+        return mask
+
+    def recolor(self, regexes, color_codes, fixgreen, flags=0):
+        """Apply the recolor fields in order (same semantics as the old per-record loop)."""
+        colors = self.base_colors.copy()
+        for regex, code in zip(regexes, color_codes):
+            if regex in [None, ""]:
+                continue
+            try:
+                mask = self.match_mask(regex, flags)
+            except re.error as e:
+                print(f"WARNING: invalid recolor regex {regex!r}: {e}")
+                continue
+            if fixgreen:
+                mask = mask & (colors != "G")
+            colors[mask] = code
+        with self._lock:
+            self.colors = colors
+            self.color_version += 1
+        return colors
+
+
+def load_dataframe(database_path, query):
+    con = sqlite3.connect(database_path)
+
+    # add some functions to sqlite
+    con.create_function("match_string", 2, match_string)
+    con.create_function("match_hex", 2, match_hex)
+
+    # perform the query based on the query extension
+    if query == "":
+        sql = "SELECT * FROM experiments;"
+    else:
+        sql = f"SELECT * FROM experiments WHERE {query};"
+
+    try:
+        cursor = con.execute(sql)
+        columns = [d[0] for d in cursor.description]
+        rows = cursor.fetchall()
+    finally:
+        con.close()
+
+    df = pd.DataFrame(rows, columns=columns)
+    if "response" in df.columns:
+        df["response"] = df["response"].map(lambda r: b"" if r is None else r)
+    return df
+
+
+def get_dataset(config):
+    """Cached, loaded database for the given directory/database/query."""
+    if not database_exists(config.directory, config.database):
+        raise PreventUpdate
+
+    database_path = os.path.join(config.directory, config.database)
+    key = file_key(database_path) + (config.query or "",)
+
+    with _CACHE_LOCK:
+        dataset = _DATASET_CACHE.get(key)
+        if dataset is not None:
+            _DATASET_CACHE.move_to_end(key)
+            return dataset
+
+    try:
+        df = load_dataframe(database_path, config.query or "")
+    except Exception as e:
+        print("ERROR (get_dataset): %s" % (e))
+        raise PreventUpdate
+
+    dataset = Dataset(key, df)
+    with _CACHE_LOCK:
+        _DATASET_CACHE[key] = dataset
+        while len(_DATASET_CACHE) > _DATASET_CACHE_SIZE:
+            _DATASET_CACHE.popitem(last=False)
+    return dataset
+
+
+class Table:
+    """Rows for the data tab (squeezed or not), served page by page to the grid.
+
+    ``df`` holds the plain columns, ``responses`` the (sliced) raw responses;
+    the decoded/hex representation is only produced for the rows being shown,
+    or for all rows when the grid sorts/filters on them.
+    """
+
+    PINNED = ["id", "color", "normal", "delay", "length", "power", "rlen", "x", "y", "z"]
+
+    def __init__(self, df, responses, squeezed):
+        self.df = df
+        self.responses = responses
+        self.squeezed = squeezed
+        self._text = None
+        self._hex = None
+        self._selection = None  # (sort_model, filter_model) -> row indices
+        self._lock = threading.Lock()
+
+    @property
+    def columns(self):
+        plain = list(self.df.columns)
+        if self.squeezed:
+            return plain + ["response", "rlen", "hex(response)"]
+        return plain + ["rlen", "response", "hex(response)"]
+
+    @staticmethod
+    def decode(response):
+        return response.decode("utf-8", errors="replace")
+
+    @staticmethod
+    def hexify(response):
+        return response.hex(" ")
+
+    def text_column(self):
+        if self._text is None:
+            self._text = np.array([self.decode(r) for r in self.responses], dtype=object)
+        return self._text
+
+    def hex_column(self):
+        if self._hex is None:
+            self._hex = np.array([self.hexify(r) for r in self.responses], dtype=object)
+        return self._hex
+
+    def column(self, name):
+        if name == "response":
+            return pd.Series(self.text_column())
+        if name == "hex(response)":
+            return pd.Series(self.hex_column())
+        if name == "rlen":
+            return pd.Series([len(r) for r in self.responses])
+        return self.df[name].reset_index(drop=True)
+
+    def select(self, sort_model, filter_model):
+        """Row indices after applying the grid's filter and sort model (cached)."""
+        cache_key = (repr(sort_model), repr(filter_model))
+        with self._lock:
+            if self._selection is not None and self._selection[0] == cache_key:
+                return self._selection[1]
+
+        mask = np.ones(len(self.responses), dtype=bool)
+        for name, model in (filter_model or {}).items():
+            if name in self.columns:
+                mask &= grid_filter_mask(self.column(name), model)
+        indices = np.flatnonzero(mask)
+
+        if sort_model:
+            frame = pd.DataFrame(
+                {s["colId"]: self.column(s["colId"]).to_numpy()[indices] for s in sort_model}
+            )
+            order = frame.sort_values(
+                by=[s["colId"] for s in sort_model],
+                ascending=[s["sort"] == "asc" for s in sort_model],
+                kind="stable",
+            ).index.to_numpy()
+            indices = indices[order]
+
+        with self._lock:
+            self._selection = (cache_key, indices)
+        return indices
+
+    def page(self, start, end, sort_model, filter_model):
+        indices = self.select(sort_model, filter_model)
+        page_indices = indices[start:end]
+        rows = self.df.iloc[page_indices].to_dict("records")
+        for row, index in zip(rows, page_indices):
+            response = self.responses[index]
+            row["rlen"] = len(response)
+            row["response"] = self.decode(response)
+            row["hex(response)"] = self.hexify(response)
+        return rows, int(len(indices))
+
+
+def grid_filter_mask(values, model):
+    """Evaluate an AG Grid text/number filter model against a column."""
+    if "conditions" in model or "condition1" in model:
+        conditions = model.get("conditions") or [model["condition1"], model["condition2"]]
+        masks = [grid_filter_mask(values, c) for c in conditions]
+        if model.get("operator", "AND") == "OR":
+            return np.logical_or.reduce(masks)
+        return np.logical_and.reduce(masks)
+
+    kind = model.get("type", "contains")
+    if kind == "blank":
+        return values.isna().to_numpy() | (values.astype(str) == "").to_numpy()
+    if kind == "notBlank":
+        return ~(values.isna().to_numpy() | (values.astype(str) == "").to_numpy())
+
+    if model.get("filterType") == "number":
+        a = pd.to_numeric(values, errors="coerce")
+        f = model.get("filter")
+        t = model.get("filterTo")
+        ops = {
+            "equals": lambda: a == f,
+            "notEqual": lambda: a != f,
+            "lessThan": lambda: a < f,
+            "lessThanOrEqual": lambda: a <= f,
+            "greaterThan": lambda: a > f,
+            "greaterThanOrEqual": lambda: a >= f,
+            "inRange": lambda: (a >= f) & (a <= t),
+        }
+    else:
+        s = values.astype(str).str.lower()
+        f = str(model.get("filter", "")).lower()
+        ops = {
+            "contains": lambda: s.str.contains(f, regex=False),
+            "notContains": lambda: ~s.str.contains(f, regex=False),
+            "equals": lambda: s == f,
+            "notEqual": lambda: s != f,
+            "startsWith": lambda: s.str.startswith(f),
+            "endsWith": lambda: s.str.endswith(f),
+        }
+    if kind not in ops:
+        return np.ones(len(values), dtype=bool)
+    return ops[kind]().fillna(False).to_numpy(dtype=bool)
+
+
+def build_table(dataset, squeeze_records, response_s, response_e):
+    df = dataset.df
+    v = dataset.names
+
+    def present(name):
+        return name is not None and name in df.columns and pd.notna(df[name].iloc[0])
+
+    parameters = [
+        (label, column)
+        for label, column in [
+            ("normal", v.normal),
+            ("length", v.length),
+            ("power", v.power),
+            ("voltage", v.voltage),
+            ("reset", v.reset),
+        ]
+        if present(column)
+    ]
+    has_xyz = present(v.x) and present(v.y) and present(v.z)
+
+    # slice response
+    responses = df[v.response].to_numpy(dtype=object)
+    if response_s is not None or response_e is not None:
+        responses = np.array(
+            [slice_response(r, response_s, response_e) for r in responses], dtype=object
+        )
 
     if not squeeze_records:
-        new_records = []
+        out = pd.DataFrame({"id": df[v.id].to_numpy(), "color": dataset.colors, "delay": df[v.delay].to_numpy()})
+        for label, column in parameters:
+            out[label] = df[column].to_numpy()
+        if has_xyz:
+            for axis in ("x", "y", "z"):
+                out[axis] = df[getattr(v, axis)].to_numpy()
+        return Table(out, responses, squeezed=False)
 
-        for record in records:
-            new_record = {}
-            new_record["id"] = record[v.id]
-            new_record["color"] = record[v.color]
-            new_record["delay"] = record[v.delay]
-            if has_normal:
-                new_record["normal"] = record[v.normal]
-            if has_length:
-                new_record["length"] = record[v.length]
-            if has_power:
-                new_record["power"] = record[v.power]
-            if has_voltage:
-                new_record["voltage"] = record[v.voltage]
-            if has_reset:
-                new_record["reset"] = record[v.reset]
+    grouped = pd.DataFrame({"response": responses, "color": dataset.colors, "delay": df[v.delay].to_numpy()})
+    aggregations = {
+        "amount": ("color", "size"),
+        "color": ("color", "first"),
+        "Delay >": ("delay", "min"),
+        "Delay <": ("delay", "max"),
+    }
+    for label, column in parameters:
+        grouped[label] = df[column].to_numpy()
+        aggregations[f"{label.capitalize()} >"] = (label, "min")
+        aggregations[f"{label.capitalize()} <"] = (label, "max")
 
-            if has_x and has_y and has_z:
-                new_record["x"] = record[v.x]
-                new_record["y"] = record[v.y]
-                new_record["z"] = record[v.z]
+    squeezed = grouped.groupby("response", sort=False).agg(**aggregations)
+    squeezed = squeezed.sort_values("amount", ascending=False, kind="stable")
+    responses = squeezed.index.to_numpy(dtype=object)
+    return Table(squeezed.reset_index(drop=True), responses, squeezed=True)
 
-            new_record["rlen"] = len(v.response)
 
-            # slice response
-            response = slice_response(record[v.response], response_s, response_e)
-
-            new_record["response"] = response.decode("utf-8", errors="replace")
-            new_record["hex(response)"] = response.hex(" ")
-            new_records.append(new_record)
-
-        return new_records
-    else:
-        squeezed_records = {}
-
-        for record in records:
-            response = record[v.response].decode("utf-8", errors="replace")
-
-            # slice response
-            response = slice_response(response, response_s, response_e)
-
-            if response not in squeezed_records:
-                squeezed_records[response] = {}
-                squeezed_records[response]["amount"] = 1
-                squeezed_records[response]["color"] = record[v.color]
-                squeezed_records[response]["Delay >"] = record[v.delay]
-                squeezed_records[response]["Delay <"] = record[v.delay]
-                if has_normal:
-                    squeezed_records[response]["Normal >"] = record[v.normal]
-                    squeezed_records[response]["Normal <"] = record[v.normal]
-                if has_length:
-                    squeezed_records[response]["Length >"] = record[v.length]
-                    squeezed_records[response]["Length <"] = record[v.length]
-                if has_power:
-                    squeezed_records[response]["Power >"] = record[v.power]
-                    squeezed_records[response]["Power <"] = record[v.power]
-                if has_voltage:
-                    squeezed_records[response]["Voltage >"] = record[v.voltage]
-                    squeezed_records[response]["Voltage <"] = record[v.voltage]
-                if has_reset:
-                    squeezed_records[response]["Reset >"] = record[v.reset]
-                    squeezed_records[response]["Reset <"] = record[v.reset]
-
-                squeezed_records[response]["response"] = response
-                squeezed_records[response]["rlen"] = len(response)
-                squeezed_records[response]["hex(response)"] = record[v.response].hex(" ")
-            else:
-                squeezed_records[response]["amount"] += 1
-                squeezed_records[response]["Delay >"] = min(
-                    squeezed_records[response]["Delay >"], record[v.delay]
-                )
-                squeezed_records[response]["Delay <"] = max(
-                    squeezed_records[response]["Delay <"], record[v.delay]
-                )
-                if has_normal:
-                    squeezed_records[response]["Normal >"] = min(
-                        squeezed_records[response]["Normal >"], record[v.normal]
-                    )
-                    squeezed_records[response]["Normal <"] = max(
-                        squeezed_records[response]["Normal <"], record[v.normal]
-                    )
-                if has_length:
-                    squeezed_records[response]["Length >"] = min(
-                        squeezed_records[response]["Length >"], record[v.length]
-                    )
-                    squeezed_records[response]["Length <"] = max(
-                        squeezed_records[response]["Length <"], record[v.length]
-                    )
-                if has_power:
-                    squeezed_records[response]["Power >"] = min(
-                        squeezed_records[response]["Power >"], record[v.power]
-                    )
-                    squeezed_records[response]["Power <"] = max(
-                        squeezed_records[response]["Power <"], record[v.power]
-                    )
-                if has_voltage:
-                    squeezed_records[response]["Voltage >"] = min(
-                        squeezed_records[response]["Voltage >"], record[v.voltage]
-                    )
-                    squeezed_records[response]["Voltage <"] = max(
-                        squeezed_records[response]["Voltage <"], record[v.voltage]
-                    )
-                if has_reset:
-                    squeezed_records[response]["Reset >"] = min(
-                        squeezed_records[response]["Reset >"], record[v.reset]
-                    )
-                    squeezed_records[response]["Reset <"] = max(
-                        squeezed_records[response]["Reset <"], record[v.reset]
-                    )
-
-        return sorted(squeezed_records.values(), key=itemgetter("amount"), reverse=True)
+def get_table(dataset, squeeze_records, response_s, response_e):
+    """Cached table for the data tab."""
+    key = (dataset.key, dataset.color_version, bool(squeeze_records), response_s, response_e)
+    with _CACHE_LOCK:
+        table = _TABLE_CACHE.get(key)
+        if table is not None:
+            _TABLE_CACHE.move_to_end(key)
+            return table
+    table = build_table(dataset, squeeze_records, response_s, response_e)
+    with _CACHE_LOCK:
+        _TABLE_CACHE[key] = table
+        while len(_TABLE_CACHE) > _TABLE_CACHE_SIZE:
+            _TABLE_CACHE.popitem(last=False)
+    return table
 
 
 def give_xy_label(parameter):
@@ -376,44 +589,6 @@ def give_xy_label(parameter):
         "glitch_voltage": "(v)",
     }
     return labels.get(parameter, "")
-
-
-def update_global_records(config):
-    global _RECORDS
-
-    if not os.path.isfile(f"{config.directory}/{config.database}"):
-        raise PreventUpdate
-
-    con = sqlite3.connect(f"{config.directory}/{config.database}")
-
-    # add some functions to sqlite
-    con.create_function("match_string", 2, match_string)
-    con.create_function("match_hex", 2, match_hex)
-
-    # perform the query based on the query extension
-    if config.query == "":
-        query = "SELECT * FROM experiments;"
-    else:
-        query = f"SELECT * FROM experiments WHERE {config.query};"
-
-    # read stuff from database
-    try:
-        df = pd.read_sql(query, con)
-        con.close()
-    except:
-        raise PreventUpdate
-
-    # add some noise
-    exclude_from_jitter = ["color"]
-    if config.x not in exclude_from_jitter and config.y not in exclude_from_jitter:
-        # df[config.x] += np.random.normal(0, config.jitter, df.shape[0])
-        # df[config.y] += np.random.normal(0, config.jitter, df.shape[0])
-        df[config.x] += np.random.normal(0, config.jitter, len(df))
-        df[config.y] += np.random.normal(0, config.jitter, len(df))
-
-
-    # store records from global
-    _RECORDS = df.to_dict("records")
 
 
 def database_exists(directory, database):
@@ -606,12 +781,12 @@ def register_callbacks(app):
         if any(v is None for v in [x, y]):
             raise PreventUpdate
 
-        update_global_records(config)
+        dataset = get_dataset(config)
 
         # create graph
         if selected_callback in CALLBACKS:
             callback_func = CALLBACKS[selected_callback]
-            result = callback_func(x, y, fixgreen, _RECORDS, config, _COLORS, *color_states)
+            result = callback_func(x, y, fixgreen, dataset, config, _COLORS, *color_states)
             return result
         raise PreventUpdate
 
@@ -628,20 +803,19 @@ def register_callbacks(app):
             Input("response_e", "value"),
             Input('tabs', 'value')
         ],
+        State("config-store", "data"),
         prevent_initial_call=False,
     )
-    # def update_data(store, figure, squeeze, showhex, wraptext, response_s, response_e):
-    def update_data(squeeze, showhex, wraptext, response_s, response_e, tab):
-        global _RECORDS
+    def update_data(squeeze, showhex, wraptext, response_s, response_e, tab, store):
+        config = AnalyzerConfig(**store)
 
-        if any(x is None for x in [_RECORDS]):
+        if not config.database:
             raise PreventUpdate
 
-        # squeeze data (or not)
-        data = generate_data(_RECORDS, squeeze, response_s, response_e)
-
-        # get columns from _RECORDS
-        columns = data[0].keys()
+        # squeeze data (or not); only the column layout is needed here, the
+        # rows are fetched page by page by get_rows()
+        table = get_table(get_dataset(config), squeeze, response_s, response_e)
+        columns = table.columns
 
         fields = []
         configs = []
@@ -681,7 +855,8 @@ def register_callbacks(app):
                 else:
                     configs.append(
                         {
-                            "autoSize": True,
+                            "flex": 2,
+                            "minWidth": 300,
                         }
                     )
             elif column in ["hex(response)"]:
@@ -699,7 +874,8 @@ def register_callbacks(app):
                 else:
                     configs.append(
                         {
-                            "autoSize": False,
+                            "flex": 3,
+                            "minWidth": 300,
                             "cellStyle": {"font-family": "monospace"},
                             "hide": not showhex
                         }
@@ -754,9 +930,13 @@ def register_callbacks(app):
         else:
             resize_strategy = {"type": "fitCellContents"}
 
+        # a new id per grid configuration makes the grid remount and re-request its rows
+        grid_id = {"type": "data-grid", "index": f"{int(bool(squeeze))}-{int(bool(showhex))}-{int(bool(wraptext))}-{response_s}-{response_e}"}
+
         data = AgGrid(
+            id=grid_id,
             columnDefs=columnDefs,
-            rowData=data,
+            rowModelType="infinite",
             defaultColDef={
                 "resizable": True,
                 "sortable": True,
@@ -767,6 +947,10 @@ def register_callbacks(app):
             getRowStyle=rowstyles,
             dashGridOptions={
                 "pagination": True,
+                "paginationPageSize": _PAGE_SIZE,
+                "cacheBlockSize": _PAGE_SIZE,
+                "maxBlocksInCache": 10,
+                "rowBuffer": 0,
                 "animateRows": False,
                 "alwaysShowHorizontalScroll": True,
                 "autoSizeStrategy": resize_strategy,
@@ -784,7 +968,34 @@ def register_callbacks(app):
         )
 
         return data
-    
+
+    # callback rows of the data grid; requested page by page by AG Grid
+    @app.callback(
+        Output({"type": "data-grid", "index": MATCH}, "getRowsResponse"),
+        Input({"type": "data-grid", "index": MATCH}, "getRowsRequest"),
+        State("config-store", "data"),
+        State("switch-squeezedata", "value"),
+        State("response_s", "value"),
+        State("response_e", "value"),
+        prevent_initial_call=True,
+    )
+    def get_rows(request, store, squeeze, response_s, response_e):
+        if request is None:
+            raise PreventUpdate
+
+        config = AnalyzerConfig(**store)
+        if not config.database:
+            raise PreventUpdate
+
+        table = get_table(get_dataset(config), squeeze, response_s, response_e)
+        rows, count = table.page(
+            request.get("startRow", 0),
+            request.get("endRow", _PAGE_SIZE),
+            request.get("sortModel") or [],
+            request.get("filterModel") or {},
+        )
+        return {"rowData": rows, "rowCount": count}
+
     @app.callback(
         Output("query-output", "children"),
         Input("query-button", "n_clicks"),
@@ -802,18 +1013,20 @@ def register_callbacks(app):
         con.create_function("match_hex", 2, match_hex)
 
         if not where_condition:
-            query = f"SELECT {select_cols} FROM experiments;"
+            query = f"SELECT {select_cols} FROM experiments"
         else:
-            query = f"SELECT {select_cols} FROM experiments WHERE {where_condition};"
+            query = f"SELECT {select_cols} FROM experiments WHERE {where_condition}"
 
-        # Build query        
+        # Build query; only the first 100 rows are shown, so only fetch those
         try:
-            df = pd.read_sql(query, con)
-            con.close()
+            df = pd.read_sql(f"SELECT * FROM ({query}) LIMIT 100;", con)
         except Exception as e:
             print(e)
-        
-        return df.head(100).to_string(index=False)
+            return f"ERROR: {e}"
+        finally:
+            con.close()
+
+        return df.to_string(index=False)
 
 
 #

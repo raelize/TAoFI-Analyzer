@@ -1,18 +1,13 @@
 from dash.exceptions import PreventUpdate
-import plotly.express as px
 
-def simple_func(x, y, fixgreen, _RECORDS, config, _COLORS, *color_states):
+from graphs.common import build_scatter
+
+
+def simple_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     try:
-        fig = px.scatter(
-            _RECORDS,
-            x=x,
-            y=y,
-            render_mode="webgl",
-            color="color",
-            labels={
-                x: f"{x} {"X"}",
-                y: f"{y} {"Y"}",
-            },
+        fig = build_scatter(
+            dataset, x, y, dataset.colors, config.jitter,
+            labels={x: f"{x} X", y: f"{y} Y"},
         )
     except Exception as e:
         print(e)
