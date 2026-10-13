@@ -175,12 +175,13 @@ def get_parameters(database_path):
 
 # new function for sqlite3 query
 def match_string(response, token):
-    return token.encode() in response
+    # experiments without a response (NULL) don't match
+    return response is not None and token.encode() in response
 
 
 # new function for sqlite3 query
 def match_hex(response, token):
-    return bytes.fromhex(token) in response
+    return response is not None and bytes.fromhex(token) in response
 
 
 def query_connection(path):
