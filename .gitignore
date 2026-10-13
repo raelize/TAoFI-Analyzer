@@ -1,5 +1,7 @@
 .venv/
 __pycache__/
-databases/
+databases/*
+# the example database is part of the repository
+!databases/g_CharacterizeRandom.py_20231019_204746.sqlite
 databases_test
 tmp
