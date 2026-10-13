@@ -1,30 +1,24 @@
 #!/usr/bin/env python3
 import argparse
 import os
-import re
-import sqlite3
 import sys
-import threading
-import time
-from functools import wraps
-from collections import OrderedDict
-from contextlib import closing
-from dataclasses import asdict, dataclass, field, fields
-from os import listdir
+from dataclasses import asdict
 from pathlib import Path
-from urllib.request import pathname2url
 
 import dash_bootstrap_components as dbc
-import numpy as np
 import pandas as pd
-from dash import ALL, MATCH, Dash, Input, Output, State, dcc, html, set_props
+from dash import ALL, MATCH, Dash, Input, Output, State, dcc, html
 from dash import callback_context as ctx
 from dash import no_update
 from dash.exceptions import PreventUpdate
 from dash_ag_grid import AgGrid
-from flask import has_request_context, request
 
-from graphs.common import COLOR_CODES, RECOLOR_FLAGS
+from analyzer.config import COLORS, ROW_COLORS, AnalyzerConfig, server_config
+from analyzer.database import (data_directory, database_path, file_key, get_argv, get_databases,
+                               get_parameters, is_local_request, list_directory, query_connection, query_error)
+from analyzer.dataset import get_dataset
+from analyzer.table import get_table
+from analyzer.timing import timed
 from graphs.scatter import scatter_func
 from graphs.scatter2 import scatter2_func
 from graphs.simple import simple_func
@@ -79,651 +73,8 @@ def get_project_metadata():
 
 PROJECT_METADATA = get_project_metadata()
 
-#
-# Dataclasses
-#
-
-
-# recolor targets, in the order of the recolor input fields
-_COLORS = ["green", "yellow", "magenta", "orange", "cyan", "blue", "black", "red"]
-
-
-@dataclass
-class AnalyzerConfig:
-    """What the browser shows; kept per browser tab in the config-store."""
-
-    directory: str = ""
-    database: str | None = None
-    x: str | None = None
-    y: str | None = None
-    jitter: float = 0
-    argv: str = ""
-    query: str = ""
-    dbkey: str = ""
-    graph: str = "scatter"
-    fixgreen: bool = True
-    # color -> [regex, label]
-    colors: dict[str, list[str | None]] = field(default_factory=lambda: {color: [None, None] for color in _COLORS})
-
-    @classmethod
-    def from_store(cls, store):
-        """Config from the config-store, ignoring unknown keys (e.g. from a page of an older version)."""
-        names = {f.name for f in fields(cls)}
-        return cls(**{key: value for key, value in (store or {}).items() if key in names})
-
-
-#
-# Globals
-#
-
-_config = AnalyzerConfig()
-
-# Loaded databases and derived tables are cached per worker process (see Dataset).
-_DATASET_CACHE = OrderedDict()
-_DATASET_CACHE_SIZE = 3
-_TABLE_CACHE = OrderedDict()
-_TABLE_CACHE_SIZE = 3
-_COUNT_CACHE = {}  # path -> (file_key, number of experiments)
-_CACHE_LOCK = threading.Lock()
-_RECOLOR_CACHE_SIZE = 8
 _PAGE_SIZE = 100
 _MAX_ROWS = 1000  # per request of the data grid
-_QUERY_TIMEOUT = 60  # seconds, for queries entered by the user
-
-# light background per color code for the rows of the data tab
-_ROW_COLORS = {
-    "P": "#fde2ec",
-    "G": "#d5f5e3",
-    "Y": "#fcf3cf",
-    "M": "#ebdef0",
-    "O": "#fae5d3",
-    "C": "#d1f2f5",
-    "B": "#d4e6f1",
-    "Z": "#d6dbdf",
-    "R": "#fadbd8",
-}
-
-
-#
-# Functions
-#
-
-def file_key(path):
-    """Identity of a database file: changes whenever the file is (re)written.
-
-    In WAL mode new experiments are written to the -wal file first (the
-    database file itself only changes at a checkpoint), so that counts too.
-    """
-    st = os.stat(path)
-    key = (os.path.abspath(path), st.st_mtime_ns, st.st_size)
-    try:
-        wal = os.stat(path + "-wal")
-        key += (wal.st_mtime_ns, wal.st_size)
-    except FileNotFoundError:
-        pass
-    return key
-
-
-def is_local_request():
-    """True when the current request comes from this machine."""
-    return has_request_context() and request.remote_addr in ("127.0.0.1", "::1")
-
-
-def data_directory(directory):
-    """Directory to read databases from, or None if ``directory`` is not a directory.
-
-    Only local users may pick another directory than the one the analyzer was
-    started with; for everyone else the server side ``_config.directory`` is used.
-    """
-    if not directory or not is_local_request():
-        return _config.directory
-    directory = os.path.abspath(os.path.expanduser(directory))
-    if not os.path.isdir(directory):
-        return None
-    return directory
-
-
-def database_path(directory, database):
-    """Path of ``database`` in ``directory``, or None if it is not one of its databases.
-
-    The database name comes from the browser, so it must be a plain ``*.sqlite``
-    file name; the directory is checked by data_directory().
-    """
-    directory = data_directory(directory)
-    if directory is None:
-        return None
-    if not database or os.path.basename(database) != database or not database.endswith(".sqlite"):
-        return None
-    path = os.path.join(directory, database)
-    if not os.path.isfile(path):
-        return None
-    return path
-
-
-def list_directory(directory):
-    """Subdirectories (name, number of databases) and number of databases in ``directory``."""
-    subdirectories = []
-    databases = 0
-    try:
-        entries = sorted(os.scandir(directory), key=lambda e: e.name.lower())
-    except OSError:
-        return [], 0
-    for entry in entries:
-        if entry.name.startswith("."):
-            continue
-        try:
-            if entry.is_dir():
-                try:
-                    count = sum(1 for name in os.listdir(entry.path) if name.endswith(".sqlite"))
-                except OSError:
-                    count = 0
-                subdirectories.append((entry.name, count))
-            elif entry.name.endswith(".sqlite"):
-                databases += 1
-        except OSError:
-            continue
-    return subdirectories, databases
-
-
-def connect(path):
-    """Read-only connection to a database (never creates or modifies a file)."""
-    uri = f"file:{pathname2url(os.path.abspath(path))}?mode=ro"
-    return sqlite3.connect(uri, uri=True)
-
-
-# columns the analyzer needs in the experiments table
-REQUIRED_COLUMNS = ("color", "response")
-
-
-def get_number_of_experiments(directory, database):
-    """Number of experiments, or None if the file is not an analyzer database."""
-    database_path = os.path.join(directory, database)
-
-    try:
-        key = file_key(database_path)
-        cached = _COUNT_CACHE.get(key[0])
-        if cached is not None and cached[0] == key:
-            return cached[1]
-        with closing(connect(database_path)) as connection:
-            with closing(connection.cursor()) as cursor:
-                cursor.execute("SELECT name FROM pragma_table_info('experiments')")
-                columns = {row[0] for row in cursor.fetchall()}
-                if not all(column in columns for column in REQUIRED_COLUMNS):
-                    count = None
-                else:
-                    cursor.execute("SELECT COUNT(*) FROM experiments")
-                    count = cursor.fetchone()[0]
-        # one entry per file (not per version), so a growing database doesn't grow the cache
-        _COUNT_CACHE[key[0]] = (key, count)
-        return count
-    except Exception as e:
-        print("ERROR (get_number_of_experiments): %s" % (e))
-
-
-def get_databases(directory):
-    # get all databases in directory
-    databases = []
-    for file in listdir(directory):
-        if re.search("^.*\\.sqlite$", file):
-            databases.append(file)
-    databases.sort(reverse=True)
-
-    # transform to options; other sqlite files are shown, but can't be selected
-    databases_options = []
-    for database in databases:
-        count = get_number_of_experiments(directory, database)
-        if count is None:
-            databases_options.append(
-                {"label": f"{database} (not an analyzer database)", "value": database, "disabled": True}
-            )
-        else:
-            databases_options.append({"label": f"{database} ({count})", "value": database})
-
-    return databases_options
-
-
-def get_argv(database_path):
-    try:
-        with closing(connect(database_path)) as connection:
-            with closing(connection.cursor()) as cursor:
-                cursor.execute("SELECT argv FROM metadata")
-                argvstr = cursor.fetchone()[0]
-                return argvstr
-    except Exception as e:
-        print("ERROR (get_argv): %s" % (e))
-
-
-def get_parameters(database_path):
-    try:
-        with closing(connect(database_path)) as connection:
-            with closing(connection.cursor()) as cursor:
-                cursor.execute("SELECT * FROM experiments")
-                parameters = list(next(zip(*cursor.description)))
-                parameters.remove("response")
-                return parameters
-    except Exception as e:
-        print("ERROR (get_parameters): %s" % (e))
-
-
-# new function for sqlite3 query
-def match_string(response, token):
-    return token.encode() in response
-
-
-# new function for sqlite3 query
-def match_hex(response, token):
-    return bytes.fromhex(token) in response
-
-
-
-class Dataset:
-    """The experiments of one database (optionally filtered by the query), as a DataFrame.
-
-    Responses are factorized once so that recolor regexes only run on the
-    unique responses; the resulting masks are cached per regex.
-    """
-
-    def __init__(self, key, df):
-        self.key = key
-        self.df = df
-        responses = df["response"]
-        self.resp_codes, self.resp_uniques = pd.factorize(responses, use_na_sentinel=False)
-        self.resp_uniques = np.asarray(self.resp_uniques, dtype=object)
-        self.base_colors = df["color"].to_numpy(dtype=object)
-        self.base_colors.flags.writeable = False
-        self._mask_cache = {}
-        self._recolor_cache = OrderedDict()
-        self._lock = threading.Lock()
-
-    def match_mask(self, regex, flags=0):
-        """Boolean mask over all experiments whose response matches ``regex``."""
-        cache_key = (regex, flags)
-        with self._lock:
-            mask = self._mask_cache.get(cache_key)
-        if mask is None:
-            pattern = re.compile(regex.encode(), flags)
-            unique_mask = np.fromiter(
-                (pattern.search(r) is not None for r in self.resp_uniques),
-                dtype=bool,
-                count=len(self.resp_uniques),
-            )
-            mask = unique_mask[self.resp_codes]
-            with self._lock:
-                self._mask_cache[cache_key] = mask
-        return mask
-
-    def recolor(self, regexes, color_codes, fixgreen, flags=0):
-        """Apply the recolor fields in order (same semantics as the old per-record loop).
-
-        The result only depends on the arguments (never on what an earlier
-        request did), so the graph and the data tab agree on every worker.
-        """
-        cache_key = (tuple(regexes), tuple(color_codes), bool(fixgreen), flags)
-        with self._lock:
-            colors = self._recolor_cache.get(cache_key)
-            if colors is not None:
-                self._recolor_cache.move_to_end(cache_key)
-                return colors
-
-        colors = self.base_colors.copy()
-        for regex, code in zip(regexes, color_codes):
-            if regex in [None, ""]:
-                continue
-            try:
-                mask = self.match_mask(regex, flags)
-            except re.error as e:
-                print(f"WARNING: invalid recolor regex {regex!r}: {e}")
-                continue
-            if fixgreen:
-                mask = mask & (colors != "G")
-            colors[mask] = code
-        colors.flags.writeable = False
-        with self._lock:
-            self._recolor_cache[cache_key] = colors
-            while len(self._recolor_cache) > _RECOLOR_CACHE_SIZE:
-                self._recolor_cache.popitem(last=False)
-        return colors
-
-    @staticmethod
-    def color_setting(config):
-        """The parts of ``config`` that decide the colors: (regexes, fixgreen, flags) or None."""
-        flags = RECOLOR_FLAGS.get(config.graph)
-        if flags is None:
-            # graph type without recoloring (e.g. simple)
-            return None
-        regexes = tuple(config.colors.get(color, [None, None])[0] for color in _COLORS)
-        return (regexes, bool(config.fixgreen), flags)
-
-    def colors_for(self, config):
-        """Colors as shown by the graph for ``config`` (graph type, fixgreen and recolor fields)."""
-        setting = self.color_setting(config)
-        if setting is None:
-            return self.base_colors
-        regexes, fixgreen, flags = setting
-        return self.recolor(regexes, COLOR_CODES, fixgreen, flags)
-
-
-def query_connection(path):
-    """Read-only connection for user written queries: with the match_* helpers and a time limit."""
-    con = connect(path)
-
-    # add some functions to sqlite
-    con.create_function("match_string", 2, match_string)
-    con.create_function("match_hex", 2, match_hex)
-
-    # abort queries that run too long (they would block a server worker); sqlite
-    # raises "interrupted" when the handler returns True
-    deadline = time.monotonic() + _QUERY_TIMEOUT
-    con.set_progress_handler(lambda: time.monotonic() > deadline, 100_000)
-    return con
-
-
-def query_error(e):
-    """Message for a failed user query."""
-    # pandas wraps the sqlite error in its own exception
-    cause = e
-    while cause is not None:
-        if isinstance(cause, sqlite3.OperationalError) and str(cause) == "interrupted":
-            return f"the query took longer than {_QUERY_TIMEOUT} s"
-        cause = cause.__cause__ or cause.__context__
-    return str(e)
-
-
-def load_dataframe(database_path, query):
-    con = query_connection(database_path)
-
-    # perform the query based on the query extension
-    if query == "":
-        sql = "SELECT * FROM experiments;"
-    else:
-        sql = f"SELECT * FROM experiments WHERE {query};"
-
-    try:
-        cursor = con.execute(sql)
-        columns = [d[0] for d in cursor.description]
-        rows = cursor.fetchall()
-    finally:
-        con.close()
-
-    df = pd.DataFrame(rows, columns=columns)
-    if "response" in df.columns:
-        df["response"] = df["response"].map(lambda r: b"" if r is None else r)
-    return df
-
-
-def get_dataset(config):
-    """Cached, loaded database for the given database/query."""
-    path = database_path(config.directory, config.database)
-    if path is None:
-        raise PreventUpdate
-
-    key = file_key(path) + (config.query or "",)
-
-    with _CACHE_LOCK:
-        dataset = _DATASET_CACHE.get(key)
-        if dataset is not None:
-            _DATASET_CACHE.move_to_end(key)
-            return dataset
-
-    try:
-        df = load_dataframe(path, config.query or "")
-    except Exception as e:
-        print("ERROR (get_dataset): %s" % query_error(e))
-        raise PreventUpdate
-
-    missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
-    if missing:
-        print("ERROR (get_dataset): %s has no %s column" % (config.database, ", ".join(missing)))
-        raise PreventUpdate
-
-    dataset = Dataset(key, df)
-    with _CACHE_LOCK:
-        _DATASET_CACHE[key] = dataset
-        while len(_DATASET_CACHE) > _DATASET_CACHE_SIZE:
-            _DATASET_CACHE.popitem(last=False)
-    return dataset
-
-
-class Table:
-    """Rows for the data tab (squeezed or not), served page by page to the grid.
-
-    ``df`` holds the plain columns, ``responses`` the (sliced) raw responses;
-    the decoded/hex representation is only produced for the rows being shown,
-    or for all rows when the grid sorts/filters on them.
-    """
-
-    def __init__(self, df, responses, squeezed, numeric=()):
-        self.df = df
-        self.responses = responses
-        self.squeezed = squeezed
-        # numeric columns (squeezed: the min/max columns and the amount)
-        self.numeric = set(numeric)
-        self._text = None
-        self._hex = None
-        self._selection = None  # (sort_model, filter_model) -> row indices
-        self._lock = threading.Lock()
-
-    @property
-    def columns(self):
-        plain = list(self.df.columns)
-        if self.squeezed:
-            return plain + ["response", "rlen", "hex(response)"]
-        return plain + ["rlen", "response", "hex(response)"]
-
-    @staticmethod
-    def decode(response):
-        return response.decode("utf-8", errors="replace")
-
-    @staticmethod
-    def hexify(response):
-        return response.hex(" ")
-
-    def text_column(self):
-        if self._text is None:
-            self._text = np.array([self.decode(r) for r in self.responses], dtype=object)
-        return self._text
-
-    def hex_column(self):
-        if self._hex is None:
-            self._hex = np.array([self.hexify(r) for r in self.responses], dtype=object)
-        return self._hex
-
-    def column(self, name):
-        if name == "response":
-            return pd.Series(self.text_column())
-        if name == "hex(response)":
-            return pd.Series(self.hex_column())
-        if name == "rlen":
-            return pd.Series([len(r) for r in self.responses])
-        return self.df[name].reset_index(drop=True)
-
-    def select(self, sort_model, filter_model):
-        """Row indices after applying the grid's filter and sort model (cached)."""
-        cache_key = (repr(sort_model), repr(filter_model))
-        with self._lock:
-            if self._selection is not None and self._selection[0] == cache_key:
-                return self._selection[1]
-
-        mask = np.ones(len(self.responses), dtype=bool)
-        for name, model in (filter_model or {}).items():
-            if name in self.columns:
-                mask &= grid_filter_mask(self.column(name), model)
-        indices = np.flatnonzero(mask)
-
-        if sort_model:
-            frame = pd.DataFrame(
-                {s["colId"]: self.column(s["colId"]).to_numpy()[indices] for s in sort_model}
-            )
-            order = frame.sort_values(
-                by=[s["colId"] for s in sort_model],
-                ascending=[s["sort"] == "asc" for s in sort_model],
-                kind="stable",
-            ).index.to_numpy()
-            indices = indices[order]
-
-        with self._lock:
-            self._selection = (cache_key, indices)
-        return indices
-
-    def page(self, start, end, sort_model, filter_model):
-        indices = self.select(sort_model, filter_model)
-        page_indices = indices[start:end]
-        rows = self.df.iloc[page_indices].to_dict("records")
-        for row, index in zip(rows, page_indices):
-            response = self.responses[index]
-            row["rlen"] = len(response)
-            row["response"] = self.decode(response)
-            row["hex(response)"] = self.hexify(response)
-        return rows, int(len(indices))
-
-
-def grid_filter_mask(values, model):
-    """Evaluate an AG Grid text/number filter model against a column."""
-    if "conditions" in model or "condition1" in model:
-        conditions = model.get("conditions") or [model["condition1"], model["condition2"]]
-        masks = [grid_filter_mask(values, c) for c in conditions]
-        if model.get("operator", "AND") == "OR":
-            return np.logical_or.reduce(masks)
-        return np.logical_and.reduce(masks)
-
-    kind = model.get("type", "contains")
-    if kind == "blank":
-        return values.isna().to_numpy() | (values.astype(str) == "").to_numpy()
-    if kind == "notBlank":
-        return ~(values.isna().to_numpy() | (values.astype(str) == "").to_numpy())
-
-    if model.get("filterType") == "number":
-        a = pd.to_numeric(values, errors="coerce")
-        f = model.get("filter")
-        t = model.get("filterTo")
-        ops = {
-            "equals": lambda: a == f,
-            "notEqual": lambda: a != f,
-            "lessThan": lambda: a < f,
-            "lessThanOrEqual": lambda: a <= f,
-            "greaterThan": lambda: a > f,
-            "greaterThanOrEqual": lambda: a >= f,
-            "inRange": lambda: (a >= f) & (a <= t),
-        }
-    else:
-        s = values.astype(str).str.lower()
-        f = str(model.get("filter", "")).lower()
-        ops = {
-            "contains": lambda: s.str.contains(f, regex=False),
-            "notContains": lambda: ~s.str.contains(f, regex=False),
-            "equals": lambda: s == f,
-            "notEqual": lambda: s != f,
-            "startsWith": lambda: s.str.startswith(f),
-            "endsWith": lambda: s.str.endswith(f),
-        }
-    if kind not in ops:
-        return np.ones(len(values), dtype=bool)
-    return ops[kind]().fillna(False).to_numpy(dtype=bool)
-
-
-def build_table(dataset, colors, squeeze_records, response_s, response_e):
-    """Data tab table with the columns of the database (in database order).
-
-    Squeezed, numeric (int/float) columns become a "<column> >" (min) and
-    "<column> <" (max) pair; other columns show the value of the first experiment.
-    """
-    df = dataset.df
-
-    def shown(column):
-        if column in ("response", "amount", "rlen", "hex(response)"):
-            return False
-        # skip columns without any value (unless there are no rows at all)
-        return df.empty or bool(df[column].notna().any())
-
-    def values(column):
-        if column == "color":
-            # as colored in the graph
-            return colors
-        values = df[column].to_numpy()
-        if values.dtype == object:
-            # other blobs can't be sent to the grid as is
-            values = np.array([r.hex(" ") if isinstance(r, bytes) else r for r in values], dtype=object)
-        return values
-
-    def numeric(column):
-        return column != "color" and df[column].dtype.kind in "iuf"
-
-    columns = [column for column in df.columns if shown(column)]
-
-    # slice response
-    responses = df["response"].to_numpy(dtype=object)
-    if response_s is not None or response_e is not None:
-        responses = np.array([r[response_s:response_e] for r in responses], dtype=object)
-
-    if not squeeze_records:
-        out = pd.DataFrame({column: values(column) for column in columns})
-        return Table(out, responses, squeezed=False, numeric={c for c in columns if numeric(c)})
-
-    grouped = pd.DataFrame({column: values(column) for column in columns})
-    grouped["response"] = responses
-    aggregations = {"amount": ("response", "size")}
-    ranges = set()
-    for column in columns:
-        if numeric(column):
-            aggregations[f"{column} >"] = (column, "min")
-            aggregations[f"{column} <"] = (column, "max")
-            ranges |= {f"{column} >", f"{column} <"}
-        else:
-            aggregations[column] = (column, "first")
-
-    squeezed = grouped.groupby("response", sort=False).agg(**aggregations)
-    squeezed = squeezed.sort_values("amount", ascending=False, kind="stable")
-    responses = squeezed.index.to_numpy(dtype=object)
-    return Table(squeezed.reset_index(drop=True), responses, squeezed=True, numeric=ranges | {"amount"})
-
-
-def get_table(dataset, config, squeeze_records, response_s, response_e):
-    """Cached table for the data tab, colored as the graph for ``config``."""
-    key = (dataset.key, Dataset.color_setting(config), bool(squeeze_records), response_s, response_e)
-    with _CACHE_LOCK:
-        table = _TABLE_CACHE.get(key)
-        if table is not None:
-            _TABLE_CACHE.move_to_end(key)
-            return table
-    table = build_table(dataset, dataset.colors_for(config), squeeze_records, response_s, response_e)
-    with _CACHE_LOCK:
-        _TABLE_CACHE[key] = table
-        while len(_TABLE_CACHE) > _TABLE_CACHE_SIZE:
-            _TABLE_CACHE.popitem(last=False)
-    return table
-
-
-_LAST_TIMING = {}
-
-
-def timed(label, base=None):
-    """Report how long a content-generating callback took in the header badge.
-
-    With ``base`` the badge also keeps showing the time of that earlier step,
-    e.g. the data table build next to the time of fetching one page of rows.
-    """
-
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            started = time.perf_counter()
-            result = func(*args, **kwargs)
-            elapsed = time.perf_counter() - started
-            _LAST_TIMING[label] = elapsed
-            shown = label
-            if base in _LAST_TIMING:
-                # e.g. the data table build plus the first page of rows
-                elapsed += _LAST_TIMING.pop(base)
-                shown = base
-            # the client-side timer is filled in by assets/timing.js
-            set_props("timing-label", {"children": f"{shown}: "})
-            set_props("timing", {"children": f"server ({elapsed:.2f} s)"})
-            return result
-
-        return wrapper
-
-    return decorator
-
 
 #
 # Callbacks
@@ -820,7 +171,7 @@ def register_callbacks(app):
 
         trigger = ctx.triggered_id
         if trigger == "directory-browse":
-            start = data_directory(directory) or _config.directory
+            start = data_directory(directory) or server_config.directory
             return True, os.path.abspath(start), no_update
         if trigger == "browse-cancel":
             return False, no_update, no_update
@@ -896,8 +247,8 @@ def register_callbacks(app):
         State("query-input", "value"),
         State("config-store", "data"),
         State("jitter-input", "value"),
-        [State(f"recolor-{color}", "value") for color in _COLORS]
-        + [State(f"recolor-{color}-label", "value") for color in _COLORS],
+        [State(f"recolor-{color}", "value") for color in COLORS]
+        + [State(f"recolor-{color}-label", "value") for color in COLORS],
     )
     # def update_store(nr_of_clicks, contents, query, database, x, y, store, *color_states):
     def update_store(nr_of_clicks, database, x, y, n_intervals, fixgreen, graph, directory, query, store, jitter, *color_states):
@@ -941,7 +292,7 @@ def register_callbacks(app):
         config.argv = get_argv(path)
 
         # Update color in config
-        for color, regex, label in zip(_COLORS, color_states[:8], color_states[8:]):
+        for color, regex, label in zip(COLORS, color_states[:8], color_states[8:]):
             config.colors[color] = [regex, label]
 
         return asdict(config), config.database, config.x, config.y
@@ -987,8 +338,8 @@ def register_callbacks(app):
 
         # the recolor fields as stored by update_store(), so that the data tab
         # (which colors from the store as well) shows the same colors
-        regexes = [config.colors.get(color, [None, None])[0] for color in _COLORS]
-        labels = [config.colors.get(color, [None, None])[1] for color in _COLORS]
+        regexes = [config.colors.get(color, [None, None])[0] for color in COLORS]
+        labels = [config.colors.get(color, [None, None])[1] for color in COLORS]
 
         # prevent update
         if any(v is None for v in [x, y]):
@@ -999,7 +350,7 @@ def register_callbacks(app):
         # create graph
         if config.graph in GRAPHS:
             callback_func = GRAPHS[config.graph]
-            result = callback_func(x, y, config.fixgreen, dataset, config, _COLORS, *regexes, *labels)
+            result = callback_func(x, y, config.fixgreen, dataset, config, COLORS, *regexes, *labels)
             if not hover:
                 # no hover lookups or hover labels at all (cheaper on huge plots)
                 result.update_layout(hovermode=False)
@@ -1116,7 +467,7 @@ def register_callbacks(app):
                     "condition": f"params.data.color == '{code}'",
                     "style": {"backgroundColor": background},
                 }
-                for code, background in _ROW_COLORS.items()
+                for code, background in ROW_COLORS.items()
             ],
             "defaultStyle": {"backgroundColor": "white", "color": "black"},
         }
@@ -1259,7 +610,7 @@ def register_callbacks(app):
 def create_layout(app):
 
     app.layout = html.Div([
-        dcc.Store(id="config-store", data=asdict(_config)),
+        dcc.Store(id="config-store", data=asdict(server_config)),
         dcc.Store(id="data-hidden-columns", data=["hex(response)"], storage_type="local"),
         dcc.Store(id="zoom-store"),
         html.Div(
@@ -1321,7 +672,7 @@ def create_layout(app):
             y = store.get('y') if store else None
             graph = store.get('graph', 'scatter') if store else 'scatter'
             local = is_local_request()
-            directory = (store.get('directory') if store and local else None) or _config.directory
+            directory = (store.get('directory') if store and local else None) or server_config.directory
             fixgreen = store.get('fixgreen', True) if store else True
             jitter = (store.get('jitter') if store else None) or 0
 
@@ -1441,7 +792,7 @@ def create_layout(app):
                             dcc.Dropdown(
                                 id="database-dropdown",
                                 style={"width": "100%"},
-                                options=get_databases(data_directory(directory) or _config.directory),
+                                options=get_databases(data_directory(directory) or server_config.directory),
                                 placeholder="database",
                                 value=database,
                             ),
@@ -1524,7 +875,7 @@ def create_layout(app):
                             html.Div(
                                 [
                                     input_component
-                                    for color in _COLORS
+                                    for color in COLORS
                                     for input_component in [
                                         dcc.Input(
                                             id=f"recolor-{color}",
@@ -1748,10 +1099,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    _config.directory = os.path.abspath(args.directory[0])
-    _config.x = args.x
-    _config.y = args.y
-    _config.database = args.database 
+    server_config.directory = os.path.abspath(args.directory[0])
+    server_config.x = args.x
+    server_config.y = args.y
+    server_config.database = args.database 
 
     register_callbacks(app)
     create_layout(app)
@@ -1760,15 +1111,15 @@ if __name__ == "__main__":
 else:
     # this path is taken when started with e.g. unicorn
     check_env()
-    _config.directory = os.path.abspath(os.environ.get("ANALYZER_DIRECTORY", "./databases"))
-    if not Path(_config.directory).absolute().exists():
+    server_config.directory = os.path.abspath(os.environ.get("ANALYZER_DIRECTORY", "./databases"))
+    if not Path(server_config.directory).absolute().exists():
         raise FileNotFoundError(
-            f"Directory {_config.directory} does not exist. Please set the environment variable ANALYZER_DIRECTORY."
+            f"Directory {server_config.directory} does not exist. Please set the environment variable ANALYZER_DIRECTORY."
         )
     # same defaults as the command line (None, not ""), optionally preset via env
-    _config.database = os.environ.get("ANALYZER_DATABASE")
-    _config.x = os.environ.get("ANALYZER_X")
-    _config.y = os.environ.get("ANALYZER_Y")
+    server_config.database = os.environ.get("ANALYZER_DATABASE")
+    server_config.x = os.environ.get("ANALYZER_X")
+    server_config.y = os.environ.get("ANALYZER_Y")
 
     register_callbacks(app)
     create_layout(app)
