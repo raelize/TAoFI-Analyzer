@@ -113,6 +113,8 @@ _COUNT_CACHE = {}  # path -> (file_key, number of experiments)
 _CACHE_LOCK = threading.Lock()
 _RECOLOR_CACHE_SIZE = 8
 _PAGE_SIZE = 100
+_MAX_ROWS = 1000  # per request of the data grid
+_QUERY_TIMEOUT = 60  # seconds, for queries entered by the user
 
 _COLORS = ["green", "yellow", "magenta", "orange", "cyan", "blue", "black", "red"]
 
@@ -454,12 +456,34 @@ class Dataset:
         return self.recolor(regexes, COLOR_CODES, fixgreen, flags)
 
 
-def load_dataframe(database_path, query):
-    con = connect(database_path)
+def query_connection(path):
+    """Read-only connection for user written queries: with the match_* helpers and a time limit."""
+    con = connect(path)
 
     # add some functions to sqlite
     con.create_function("match_string", 2, match_string)
     con.create_function("match_hex", 2, match_hex)
+
+    # abort queries that run too long (they would block a server worker); sqlite
+    # raises "interrupted" when the handler returns True
+    deadline = time.monotonic() + _QUERY_TIMEOUT
+    con.set_progress_handler(lambda: time.monotonic() > deadline, 100_000)
+    return con
+
+
+def query_error(e):
+    """Message for a failed user query."""
+    # pandas wraps the sqlite error in its own exception
+    cause = e
+    while cause is not None:
+        if isinstance(cause, sqlite3.OperationalError) and str(cause) == "interrupted":
+            return f"the query took longer than {_QUERY_TIMEOUT} s"
+        cause = cause.__cause__ or cause.__context__
+    return str(e)
+
+
+def load_dataframe(database_path, query):
+    con = query_connection(database_path)
 
     # perform the query based on the query extension
     if query == "":
@@ -497,7 +521,7 @@ def get_dataset(config):
     try:
         df = load_dataframe(path, config.query or "")
     except Exception as e:
-        print("ERROR (get_dataset): %s" % (e))
+        print("ERROR (get_dataset): %s" % query_error(e))
         raise PreventUpdate
 
     missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
@@ -1292,9 +1316,12 @@ def register_callbacks(app):
             raise PreventUpdate
 
         table = get_table(get_dataset(config), config, squeeze, response_s, response_e)
+        # the grid asks for _PAGE_SIZE rows at a time; never send more than _MAX_ROWS at once
+        start = max(0, int(request.get("startRow") or 0))
+        end = min(int(request.get("endRow") or start + _PAGE_SIZE), start + _MAX_ROWS)
         rows, count = table.page(
-            request.get("startRow", 0),
-            request.get("endRow", _PAGE_SIZE),
+            start,
+            end,
             request.get("sortModel") or [],
             request.get("filterModel") or {},
         )
@@ -1316,9 +1343,7 @@ def register_callbacks(app):
         if path is None:
             return "ERROR: select a database on the Graph tab first"
 
-        con = connect(path)
-        con.create_function("match_string", 2, match_string)
-        con.create_function("match_hex", 2, match_hex)
+        con = query_connection(path)
 
         if not where_condition:
             query = f"SELECT {select_cols} FROM experiments"
@@ -1330,7 +1355,7 @@ def register_callbacks(app):
             df = pd.read_sql(f"SELECT * FROM ({query}) LIMIT 100;", con)
         except Exception as e:
             print(e)
-            return f"ERROR: {e}"
+            return f"ERROR: {query_error(e)}"
         finally:
             con.close()
 
