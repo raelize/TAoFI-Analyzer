@@ -1,0 +1,397 @@
+"""The callbacks, called through Dash's HTTP endpoint like the browser does."""
+import os
+import sqlite3
+
+import pytest
+
+from analyzer import database
+from analyzer.callbacks import column_defs
+from analyzer.config import COLORS
+from analyzer.table import Table
+from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, EXAMPLE_EXPERIMENTS
+
+GRID = '{"index":["MATCH"],"type":"data-grid"}'
+GRIDS = '{"index":["ALL"],"type":"data-grid"}'
+
+
+@pytest.fixture
+def client(dash_client):
+    return dash_client("127.0.0.1")
+
+
+@pytest.fixture
+def remote(dash_client):
+    return dash_client("10.1.2.3")
+
+
+def select(client, store, database=EXAMPLE_DATABASE, directory=None, trigger="update-button.n_clicks", query="",
+           graph="scatter", fixgreen=True, x="delay", y="length", recolor=None):
+    """update_store(): what happens when the user selects a database and clicks Update."""
+    values = {
+        "update-button.n_clicks": 1, "database-dropdown.value": database, "x-dropdown.value": x, "y-dropdown.value": y,
+        "refresh-timer.n_intervals": None, "switch-fixgreen.value": fixgreen, "graph-dropdown.value": graph,
+        "directory-input.value": directory or store["directory"], "query-input.value": query,
+        "config-store.data": store, "jitter-input.value": 0,
+    }
+    for color in COLORS:
+        values[f"recolor-{color}.value"] = (recolor or {}).get(color)
+        values[f"recolor-{color}-label.value"] = None
+    return client.call("config-store.data", values, trigger)
+
+
+@pytest.fixture
+def store(client):
+    code, response = select(client, client.layout_store())
+    assert code == 200
+    return response["config-store"]["data"]
+
+
+def graph(client, store, hover=True):
+    return client.call("graph.figure", {"config-store.data": store, "switch-hover.value": hover}, "config-store.data")
+
+
+def data(client, store, squeeze=False, hidden=(), wraptext=False):
+    values = {
+        "switch-squeezedata.value": squeeze, "switch-wraptext.value": wraptext, "response_s.value": None,
+        "response_e.value": None, "tabs.value": "tab-data", "config-store.data": store, "data-hidden-columns.data": list(hidden),
+    }
+    return client.call("data.children", values, "tabs.value")
+
+
+def get_rows(client, store, grid_id, squeeze=False, start=0, end=100, sort=(), filters=None):
+    request = {"startRow": start, "endRow": end, "sortModel": list(sort), "filterModel": filters or {}}
+    values = {"config-store.data": store, "switch-squeezedata.value": squeeze, "response_s.value": None, "response_e.value": None}
+    code, response = client.call("getRowsResponse", values, "grid.getRowsRequest",
+                                 ids={f"{GRID}.getRowsRequest": (grid_id, request), f"{GRID}.getRowsResponse": grid_id})
+    assert code == 200
+    return next(iter(response.values()))["getRowsResponse"]
+
+
+def query(client, store, select_columns="count(*)", where=""):
+    values = {"query-button.n_clicks": 1, "select-input.value": select_columns, "where-input.value": where, "config-store.data": store}
+    code, response = client.call("query-output.children", values, "query-button.n_clicks")
+    assert code == 200
+    return response["query-output"]["children"]
+
+
+#
+# page and tabs
+#
+
+
+@pytest.mark.parametrize("tab", ["tab-graph", "tab-data", "tab-information", "tab-database", "tab-guide"])
+def test_tabs_render(client, store, tab):
+    code, response = client.call("tabs-content.children", {"tabs.value": tab, "config-store.data": store}, "tabs.value")
+    assert code == 200
+
+
+def test_graph_tab_shows_the_store(client, store):
+    store = dict(store, x="id", y="delay", jitter=3, graph="scatter2", fixgreen=False)
+    code, response = client.call("tabs-content.children", {"tabs.value": "tab-graph", "config-store.data": store}, "tabs.value")
+    values = {}
+
+    def walk(node):
+        if isinstance(node, dict):
+            props = node.get("props")
+            if isinstance(props, dict) and isinstance(props.get("id"), str):
+                values[props["id"]] = props.get("value")
+            for child in node.values():
+                walk(child)
+        elif isinstance(node, list):
+            for child in node:
+                walk(child)
+
+    walk(response)
+    assert values["database-dropdown"] == EXAMPLE_DATABASE
+    assert (values["x-dropdown"], values["y-dropdown"], values["jitter-input"]) == ("id", "delay", 3)
+    assert (values["graph-dropdown"], values["switch-fixgreen"]) == ("scatter2", False)
+
+
+def test_unknown_tab(client, store):
+    code, _ = client.call("tabs-content.children", {"tabs.value": "tab-nope", "config-store.data": store}, "tabs.value")
+    assert code == 204
+
+
+#
+# selecting a database
+#
+
+
+def test_select_database(store):
+    assert store["directory"] == EXAMPLE_DIRECTORY
+    assert store["database"] == EXAMPLE_DATABASE
+    assert (store["x"], store["y"]) == ("delay", "length")
+    assert store["argv"] == EXAMPLE_ARGV
+
+
+def test_database_list(client, tmp_path):
+    code, response = client.call("database-dropdown.options", {"directory-input.value": EXAMPLE_DIRECTORY}, "directory-input.value")
+    assert response["database-dropdown"]["options"] == [{"label": f"{EXAMPLE_DATABASE} ({EXAMPLE_EXPERIMENTS})", "value": EXAMPLE_DATABASE}]
+    assert response["directory-input"]["invalid"] is False
+    code, response = client.call("database-dropdown.options", {"directory-input.value": str(tmp_path / "missing")}, "directory-input.value")
+    assert response == {"database-dropdown": {"options": []}, "directory-input": {"invalid": True}}
+
+
+def test_axis_lists(client, store):
+    code, response = client.call("x-dropdown.options", {"database-dropdown.value": EXAMPLE_DATABASE, "config-store.data": store}, "database-dropdown.value")
+    assert response["x-dropdown"]["options"] == response["y-dropdown"]["options"] == ["id", "delay", "length", "color"]
+
+
+def test_switch_directory(client, store, tmp_path, make_database):
+    make_database("other.sqlite")
+    code, response = select(client, store, database=EXAMPLE_DATABASE, directory=str(tmp_path), trigger="directory-input.value")
+    assert code == 200
+    switched = response["config-store"]["data"]
+    assert switched["directory"] == str(tmp_path)
+    # the database is deselected, the axes are kept
+    assert switched["database"] is None and response["database-dropdown"]["value"] is None
+    assert (response["x-dropdown"]["value"], response["y-dropdown"]["value"]) == ("delay", "length")
+    code, response = select(client, switched, database="other.sqlite", directory=str(tmp_path))
+    assert response["config-store"]["data"]["database"] == "other.sqlite"
+
+
+def test_remote_users_cant_switch_directory(remote, tmp_path, make_database):
+    make_database("other.sqlite")
+    store = remote.layout_store()
+    code, _ = select(remote, store, database=None, directory=str(tmp_path), trigger="directory-input.value")
+    assert code == 204
+    code, response = remote.call("database-dropdown.options", {"directory-input.value": str(tmp_path)}, "directory-input.value")
+    assert [o["value"] for o in response["database-dropdown"]["options"]] == [EXAMPLE_DATABASE]
+    # a store pointing elsewhere is ignored
+    code, _ = select(remote, dict(store, directory=str(tmp_path)), database="other.sqlite", directory=str(tmp_path))
+    assert code == 204
+
+
+def test_auto_refresh_only_when_the_database_changed(client, tmp_path, make_database):
+    make_database(rows=[(1, 1, 1, "G", b"x")])
+    _, response = select(client, client.layout_store(), database=None, directory=str(tmp_path), trigger="directory-input.value")
+    _, response = select(client, response["config-store"]["data"], database="test.sqlite", directory=str(tmp_path))
+    store = response["config-store"]["data"]
+    code, _ = select(client, store, database="test.sqlite", directory=str(tmp_path), trigger="refresh-timer.n_intervals")
+    assert code == 204
+    con = sqlite3.connect(tmp_path / "test.sqlite")
+    con.execute("INSERT INTO experiments VALUES (2, 2, 2, 'R', x'00')")
+    con.commit()
+    con.close()
+    code, _ = select(client, store, database="test.sqlite", directory=str(tmp_path), trigger="refresh-timer.n_intervals")
+    assert code == 200
+
+
+#
+# graph
+#
+
+
+def legend(response):
+    return [trace["name"] for trace in response["graph"]["figure"]["data"]]
+
+
+def test_graph(client, store):
+    code, response = graph(client, store)
+    assert code == 200
+    assert legend(response) == ["None ( 3004 / 43.9% )", "None ( 3497 / 51.1% )", "None ( 298 / 4.4% )", "None ( 44 / 0.6% )"]
+
+
+@pytest.mark.parametrize("graph_type", ["scatter", "scatter2", "simple"])
+def test_graph_types(client, graph_type):
+    _, response = select(client, client.layout_store(), graph=graph_type)
+    code, response = graph(client, response["config-store"]["data"])
+    assert code == 200
+    assert len(response["graph"]["figure"]["data"]) == 4
+
+
+def test_recolored_graph(client):
+    _, response = select(client, client.layout_store(), recolor={"red": "^"})
+    code, response = graph(client, response["config-store"]["data"])
+    # everything except the green experiments is red
+    assert legend(response)[0].endswith("( 3004 / 43.9% )")
+    assert legend(response)[-1] == "^ ( 3839 / 56.1% )"
+
+
+def test_graph_without_hover(client, store):
+    code, response = graph(client, store, hover=False)
+    assert response["graph"]["figure"]["layout"]["hovermode"] is False
+
+
+def test_graph_of_a_non_analyzer_database(client, store, tmp_path, make_database):
+    make_database("no-response.sqlite", columns="id integer, delay integer, length integer, color text", rows=[(1, 1, 1, "G")])
+    code, _ = graph(client, dict(store, directory=str(tmp_path), database="no-response.sqlite"))
+    assert code == 204
+
+
+#
+# data tab
+#
+
+
+def test_data(client, store):
+    code, response = data(client, store, hidden=["hex(response)"])
+    assert code == 200
+    grid = response["data"]["children"]["props"]
+    assert response["data-columns"]["options"] == ["id", "delay", "length", "color", "rlen", "response", "hex(response)"]
+    assert response["data-columns"]["value"] == ["id", "delay", "length", "color", "rlen", "response"]
+    assert [d["field"] for d in grid["columnDefs"] if d["hide"]] == ["hex(response)"]
+    rows = get_rows(client, store, grid["id"], start=0, end=5)
+    assert rows["rowCount"] == EXAMPLE_EXPERIMENTS
+    assert [row["id"] for row in rows["rowData"]] == [0, 1, 2, 3, 4]
+
+
+def test_data_squeezed(client, store):
+    code, response = data(client, store, squeeze=True)
+    grid = response["data"]["children"]["props"]
+    assert response["data-columns"]["options"][:3] == ["amount", "id >", "id <"]
+    rows = get_rows(client, store, grid["id"], squeeze=True, filters={"delay <": {"filterType": "number", "type": "greaterThan", "filter": 1990}},
+                    sort=[{"colId": "amount", "sort": "desc"}])
+    amounts = [row["amount"] for row in rows["rowData"]]
+    assert amounts == sorted(amounts, reverse=True)
+    assert all(row["delay <"] > 1990 for row in rows["rowData"])
+
+
+def test_data_is_colored_like_the_graph(client):
+    _, response = select(client, client.layout_store(), recolor={"red": "^"})
+    store = response["config-store"]["data"]
+    _, response = data(client, store)
+    rows = get_rows(client, store, response["data"]["children"]["props"]["id"], end=1000)
+    assert {row["color"] for row in rows["rowData"]} == {"G", "R"}
+
+
+def test_rows_per_request_are_capped(client, store):
+    _, response = data(client, store)
+    rows = get_rows(client, store, response["data"]["children"]["props"]["id"], end=10**9)
+    assert len(rows["rowData"]) == 1000
+
+
+def test_empty_data(client):
+    _, response = select(client, client.layout_store(), query="delay < 0")
+    store = response["config-store"]["data"]
+    for squeeze in (False, True):
+        code, response = data(client, store, squeeze=squeeze)
+        assert code == 200
+        assert get_rows(client, store, response["data"]["children"]["props"]["id"], squeeze=squeeze)["rowCount"] == 0
+
+
+def test_show_and_hide_columns(client, store):
+    _, response = data(client, store, hidden=["hex(response)", "only-when-squeezed >"])
+    grid = response["data"]["children"]["props"]
+    shown = [c for c in response["data-columns"]["value"] if c not in ("delay", "rlen")] + ["hex(response)"]
+    values = {"data-columns.value": shown, "data-columns.options": response["data-columns"]["options"],
+              "data-hidden-columns.data": ["hex(response)", "only-when-squeezed >"]}
+    code, response = client.call("data-hidden-columns.data", values, "data-columns.value", ids={
+        f"{GRIDS}.columnDefs": [(grid["id"], grid["columnDefs"])],
+    })
+    assert code == 200
+    # hidden columns of the other (squeezed) table are kept
+    assert response["data-hidden-columns"]["data"] == ["delay", "only-when-squeezed >", "rlen"]
+    defs = next(v for k, v in response.items() if "data-grid" in k)["columnDefs"]
+    assert [d["field"] for d in defs if d["hide"]] == ["delay", "rlen"]
+
+
+def test_column_defs():
+    import pandas as pd
+
+    table = Table(pd.DataFrame({"id": [1], "note": ["a"], "color": ["G"]}), [b"x"], squeezed=False, numeric={"id"})
+    defs = {d["field"]: d for d in column_defs(table, wraptext=False, hidden={"note"})}
+    assert defs["id"]["filter"] == defs["rlen"]["filter"] == "agNumberColumnFilter"
+    assert defs["note"]["filter"] == defs["color"]["filter"] == defs["response"]["filter"] == "agTextColumnFilter"
+    assert defs["note"]["hide"] and not defs["id"]["hide"]
+    assert defs["id"]["pinned"] == defs["color"]["pinned"] == "left"
+    assert defs["hex(response)"]["cellStyle"] == {"font-family": "monospace"}
+    wrapped = {d["field"]: d for d in column_defs(table, wraptext=True, hidden=set())}
+    assert wrapped["response"]["wrapText"] and wrapped["hex(response)"]["wrapText"]
+
+
+#
+# database tab
+#
+
+
+def test_query(client, store):
+    assert query(client, store).split() == ["count(*)", str(EXAMPLE_EXPERIMENTS)]
+    con = sqlite3.connect(os.path.join(EXAMPLE_DIRECTORY, EXAMPLE_DATABASE))
+    expected = [str(i) for (i,) in con.execute("SELECT id FROM experiments WHERE instr(response, x'ff') AND id < 50")]
+    con.close()
+    assert len(expected) > 1
+    assert query(client, store, "id", "match_hex(response, 'ff') AND id < 50").split() == ["id"] + expected
+
+
+def test_query_errors(client, store):
+    assert query(client, store, "nope").startswith("ERROR:")
+    assert query(client, dict(store, database="../../etc/passwd")) == "ERROR: select a database on the Graph tab first"
+    assert query(client, dict(store, database=None)) == "ERROR: select a database on the Graph tab first"
+
+
+def test_slow_query(client, store, monkeypatch):
+    monkeypatch.setattr(database, "QUERY_TIMEOUT", 0.5)
+    where = "(WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 20000000) SELECT count(*) FROM r) > 0"
+    assert query(client, store, where=where) == "ERROR: the query took longer than 0.5 s"
+
+
+def test_no_files_are_created(client, store):
+    before = sorted(os.listdir(EXAMPLE_DIRECTORY))
+    query(client, dict(store, database=None))
+    query(client, dict(store, database="new.sqlite"))
+    assert sorted(os.listdir(EXAMPLE_DIRECTORY)) == before
+
+
+#
+# information tab
+#
+
+
+def test_information(client, store):
+    _, response = client.call("argv.children", {"config-store.data": store}, "config-store.data")
+    assert response["argv"]["children"] == EXAMPLE_ARGV
+    _, response = client.call("printstore.children", {"config-store.data": store}, "config-store.data")
+    assert f"* database:{EXAMPLE_DATABASE}" in response["printstore"]["children"]
+
+
+def test_zoomed_points(client, store):
+    def points(zoom):
+        _, response = client.call("points.children", {"zoom-store.data": zoom, "config-store.data": store}, "zoom-store.data")
+        return response["points"]["children"]
+
+    assert points(None) == "Zoom into the graph to see the selected range here."
+    assert points({"xaxis": [1100, 1500.5]}) == "* delay: 1100 – 1500.5\n* length: (not zoomed)\n"
+    assert points({"xaxis": [1, 2], "yaxis": [3, 4]}) == "* delay: 1 – 2\n* length: 3 – 4\n"
+
+
+#
+# directory browser
+#
+
+
+def browse(client, trigger, directory=None, browsed=None, entries=()):
+    values = {"directory-browse.n_clicks": 1, "browse-select.n_clicks": 1, "browse-cancel.n_clicks": 1,
+              "directory-input.value": directory, "browse-directory.data": browsed}
+    entry_id = '{"index":["ALL"],"type":"browse-entry"}.n_clicks'
+    return client.call("directory-modal.is_open", values, trigger, ids={entry_id: list(entries)})
+
+
+def test_directory_browser(client, tmp_path):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "a.sqlite").touch()
+
+    code, response = browse(client, "directory-browse.n_clicks", directory=str(tmp_path))
+    assert response == {"directory-modal": {"is_open": True}, "browse-directory": {"data": str(tmp_path)}}
+
+    code, response = client.call("browse-list.children", {"browse-directory.data": str(tmp_path)}, "browse-directory.data")
+    entries = [item["props"]["id"]["index"] for item in response["browse-list"]["children"]]
+    assert entries == [str(tmp_path.parent), str(tmp_path / "sub")]
+
+    # clicking an entry walks into it; new (unclicked) entries don't
+    sub = {"index": str(tmp_path / "sub"), "type": "browse-entry"}
+    code, response = browse(client, '{"index":"%s","type":"browse-entry"}.n_clicks' % (tmp_path / "sub"), entries=[(sub, 1)])
+    assert response == {"browse-directory": {"data": str(tmp_path / "sub")}}
+
+    code, response = browse(client, "browse-select.n_clicks", browsed=str(tmp_path / "sub"))
+    assert response == {"directory-modal": {"is_open": False}, "directory-input": {"value": str(tmp_path / "sub")}}
+
+    code, response = browse(client, "browse-cancel.n_clicks")
+    assert response == {"directory-modal": {"is_open": False}}
+
+
+def test_directory_browser_is_local_only(remote, tmp_path):
+    code, _ = browse(remote, "directory-browse.n_clicks", directory=str(tmp_path))
+    assert code == 204
+    code, _ = remote.call("browse-list.children", {"browse-directory.data": str(tmp_path)}, "browse-directory.data")
+    assert code == 204
