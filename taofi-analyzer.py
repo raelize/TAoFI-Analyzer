@@ -109,7 +109,7 @@ _DATASET_CACHE = OrderedDict()
 _DATASET_CACHE_SIZE = 3
 _TABLE_CACHE = OrderedDict()
 _TABLE_CACHE_SIZE = 3
-_COUNT_CACHE = {}
+_COUNT_CACHE = {}  # path -> (file_key, number of experiments)
 _CACHE_LOCK = threading.Lock()
 _RECOLOR_CACHE_SIZE = 8
 _PAGE_SIZE = 100
@@ -228,8 +228,9 @@ def get_number_of_experiments(directory, database):
 
     try:
         key = file_key(database_path)
-        if key in _COUNT_CACHE:
-            return _COUNT_CACHE[key]
+        cached = _COUNT_CACHE.get(key[0])
+        if cached is not None and cached[0] == key:
+            return cached[1]
         with closing(connect(database_path)) as connection:
             with closing(connection.cursor()) as cursor:
                 cursor.execute("SELECT name FROM pragma_table_info('experiments')")
@@ -239,7 +240,8 @@ def get_number_of_experiments(directory, database):
                 else:
                     cursor.execute("SELECT COUNT(*) FROM experiments")
                     count = cursor.fetchone()[0]
-        _COUNT_CACHE[key] = count
+        # one entry per file (not per version), so a growing database doesn't grow the cache
+        _COUNT_CACHE[key[0]] = (key, count)
         return count
     except Exception as e:
         print("ERROR (get_number_of_experiments): %s" % (e))
