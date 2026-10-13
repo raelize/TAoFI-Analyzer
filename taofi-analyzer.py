@@ -718,30 +718,33 @@ def timed(label, base=None):
 
 
 def register_callbacks(app):
-    # callback for remembering the zoomed area of the graph (shown on the information tab)
-    @app.callback(
+    # callback for remembering the zoomed area of the graph (shown on the information tab);
+    # runs in the browser and reads the plot's current axes, so quick successive
+    # zooms can't be merged into an outdated area
+    app.clientside_callback(
+        """
+        function (relayout, store) {
+            const triggered = dash_clientside.callback_context.triggered.map((t) => t.prop_id);
+            const plot = document.querySelector("#graph .js-plotly-plot");
+            if (triggered.includes("config-store.data") || !plot || !plot.layout) {
+                // another graph: nothing zoomed (yet)
+                return null;
+            }
+            const zoom = {};
+            for (const axis of ["xaxis", "yaxis"]) {
+                const layout = plot.layout[axis];
+                if (layout && !layout.autorange && layout.range) {
+                    zoom[axis] = layout.range.slice();
+                }
+            }
+            return Object.keys(zoom).length ? zoom : null;
+        }
+        """,
         Output("zoom-store", "data"),
         Input("graph", "relayoutData"),
         Input("config-store", "data"),
-        State("zoom-store", "data"),
         prevent_initial_call=True,
     )
-    def update_zoom(relayout, store, zoom):
-        if ctx.triggered_id == "config-store":
-            # another graph: nothing zoomed (yet)
-            return None
-        if not relayout:
-            raise PreventUpdate
-
-        zoom = dict(zoom or {})
-        for axis in ("xaxis", "yaxis"):
-            if relayout.get(f"{axis}.autorange"):
-                zoom.pop(axis, None)
-            elif f"{axis}.range[0]" in relayout:
-                zoom[axis] = [relayout[f"{axis}.range[0]"], relayout[f"{axis}.range[1]"]]
-            elif f"{axis}.range" in relayout:
-                zoom[axis] = list(relayout[f"{axis}.range"])
-        return zoom or None
 
     # callback for printing the zoomed area
     @app.callback(
