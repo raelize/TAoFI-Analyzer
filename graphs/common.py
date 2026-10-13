@@ -4,6 +4,8 @@ The analyzer hands the graph functions a ``Dataset`` (see taofi-analyzer.py)
 instead of a list of per-experiment dicts. Everything here works on numpy
 arrays so that a 500k-experiment database renders in well under a second.
 """
+import re
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -23,6 +25,14 @@ COLOR_ORDER = ["P"] + COLOR_CODES
 COLOR_MAP = {
     "P": "pink", "G": "green", "Y": "yellow", "M": "magenta",
     "O": "orange", "C": "cyan", "B": "blue", "Z": "black", "R": "red",
+}
+
+
+# Regex flags each graph type recolors with; graph types not listed don't recolor.
+# The data tab uses this too, so it shows the same colors as the graph.
+RECOLOR_FLAGS = {
+    "scatter": re.DOTALL,
+    "scatter2": 0,
 }
 
 

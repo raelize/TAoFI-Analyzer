@@ -1,7 +1,7 @@
 from dash.exceptions import PreventUpdate
 
-from graphs.common import (AXIS_LABELS, COLOR_CODES, build_scatter,
-                           count_colors, update_legend_labels)
+from graphs.common import (AXIS_LABELS, COLOR_CODES, RECOLOR_FLAGS,
+                           build_scatter, count_colors, update_legend_labels)
 
 
 def scatter2_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
@@ -9,7 +9,7 @@ def scatter2_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     color_labels = color_states[8:]
 
     # Apply recoloring and count (no DOTALL here, as before)
-    colors = dataset.recolor(color_values, COLOR_CODES, fixgreen, 0)
+    colors = dataset.recolor(color_values, COLOR_CODES, fixgreen, RECOLOR_FLAGS["scatter2"])
     color_counts = count_colors(colors)
     total = len(colors)
 

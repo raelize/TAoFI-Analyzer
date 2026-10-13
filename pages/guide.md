@@ -40,9 +40,10 @@ You can squeeze the data (i.e., combine experiment with the same responses) or n
 
 For each row of data, you can:
 
-- show a hex representation of the response or not
 - wrap the response in the cell or not
 - slice the response or not
+
+Use the column selector below the switches to choose which columns are shown (e.g., add `hex(response)` for a hex representation of the response). The selection is remembered by the browser.
 
 ...
 
