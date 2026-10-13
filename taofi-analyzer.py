@@ -766,39 +766,49 @@ def timed(label, base=None):
 
 
 def register_callbacks(app):
-    # callback for zoomed doints
+    # callback for remembering the zoomed area of the graph (shown on the information tab)
     @app.callback(
-        Output("points", "children"),
-        [
-            Input("graph", "relayoutData"), 
-            Input("graph", "figure")
-        ],
-        prevent_initial_call=False,
+        Output("zoom-store", "data"),
+        Input("graph", "relayoutData"),
+        Input("config-store", "data"),
+        State("zoom-store", "data"),
+        prevent_initial_call=True,
     )
-    def zoomed_points(relayoutData, figure):
-        if not figure or not relayoutData or "xaxis.range[0]" not in relayoutData:
+    def update_zoom(relayout, store, zoom):
+        if ctx.triggered_id == "config-store":
+            # another graph: nothing zoomed (yet)
+            return None
+        if not relayout:
             raise PreventUpdate
 
-        layout = figure["layout"]
-        x_axis = layout["xaxis"]
-        y_axis = layout["yaxis"]
+        zoom = dict(zoom or {})
+        for axis in ("xaxis", "yaxis"):
+            if relayout.get(f"{axis}.autorange"):
+                zoom.pop(axis, None)
+            elif f"{axis}.range[0]" in relayout:
+                zoom[axis] = [relayout[f"{axis}.range[0]"], relayout[f"{axis}.range[1]"]]
+            elif f"{axis}.range" in relayout:
+                zoom[axis] = list(relayout[f"{axis}.range"])
+        return zoom or None
 
-        if "xaxis.range[0]" in relayoutData:
-            ranges = {
-                "x": (relayoutData["xaxis.range[0]"], relayoutData["xaxis.range[1]"]),
-                "y": (relayoutData["yaxis.range[0]"], relayoutData["yaxis.range[1]"]),
-            }
-        else:
-            ranges = {"x": tuple(x_axis["range"]), "y": tuple(y_axis["range"])}
+    # callback for printing the zoomed area
+    @app.callback(
+        Output("points", "children"),
+        Input("zoom-store", "data"),
+        State("config-store", "data"),
+    )
+    def zoomed_points(zoom, store):
+        if not zoom:
+            return "Zoom into the graph to see the selected range here."
 
-        p = f"""
-            * {x_axis["title"]["text"]}
-                * {ranges["x"][0]}
-                * {ranges["x"][1]} 
-            * {y_axis["title"]["text"]}
-                * {ranges["y"][0]}
-             * {ranges["y"][1]}
-        """
+        names = {"xaxis": store.get("x"), "yaxis": store.get("y")}
+        p = ""
+        for axis in ("xaxis", "yaxis"):
+            if axis in zoom:
+                low, high = (f"{v:g}" if isinstance(v, (int, float)) else str(v) for v in zoom[axis])
+                p += f"* {names[axis]}: {low} – {high}\n"
+            else:
+                p += f"* {names[axis]}: (not zoomed)\n"
         return p
 
     # callback for printing store at the bottom
@@ -968,11 +978,11 @@ def register_callbacks(app):
 
         return asdict(config), config.database, config.x, config.y
 
-    # callback for printing the argv string at the bottom
+    # callback for printing the argv string at the bottom; also runs when the
+    # information tab is opened (its input already exists, only the output is new)
     @app.callback(
         Output("argv", "children"),
         Input("config-store", "data"),
-        prevent_initial_call=True,
     )
     def update_argv(store):
         config = AnalyzerConfig(**store)
@@ -1349,6 +1359,7 @@ def create_layout(app):
     app.layout = html.Div([
         dcc.Store(id="config-store", data=asdict(_config)),
         dcc.Store(id="data-hidden-columns", data=["hex(response)"], storage_type="local"),
+        dcc.Store(id="zoom-store"),
         html.Div(
             [
                 html.H4("Research by Raelize"),
