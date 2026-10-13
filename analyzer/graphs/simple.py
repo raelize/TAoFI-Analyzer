@@ -1,6 +1,6 @@
 from dash.exceptions import PreventUpdate
 
-from graphs.common import build_scatter
+from analyzer.graphs.common import build_scatter
 
 
 def simple_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):

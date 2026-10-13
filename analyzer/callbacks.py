@@ -16,9 +16,9 @@ from analyzer.database import (data_directory, database_path, file_key, get_argv
 from analyzer.dataset import get_dataset
 from analyzer.table import get_table
 from analyzer.timing import timed
-from graphs.scatter import scatter_func
-from graphs.scatter2 import scatter2_func
-from graphs.simple import simple_func
+from analyzer.graphs.scatter import scatter_func
+from analyzer.graphs.scatter2 import scatter2_func
+from analyzer.graphs.simple import simple_func
 
 # graph types (see the graph dropdown)
 GRAPHS = {

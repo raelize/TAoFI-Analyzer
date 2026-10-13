@@ -1,4 +1,5 @@
 """The page layout and the contents of the tabs."""
+import os
 from dataclasses import asdict
 
 import dash_bootstrap_components as dbc
@@ -8,6 +9,9 @@ from analyzer.config import COLORS, server_config
 from analyzer.database import (data_directory, get_databases,
                                is_local_request)
 from analyzer.timing import timed
+
+# the guide tab (relative to the code, not the current directory)
+GUIDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pages", "guide.md")
 
 
 def create_layout(app):
@@ -444,7 +448,7 @@ def create_layout(app):
                 dcc.Loading(html.Pre(id='query-output'), type="circle", delay_show=150)
             ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
         elif tab == 'tab-guide':
-            with open('pages/guide.md', 'r', encoding='utf-8') as f:
+            with open(GUIDE, 'r', encoding='utf-8') as f:
                 guide_text = f.read()
             
             content = html.Div([

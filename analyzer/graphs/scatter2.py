@@ -1,6 +1,6 @@
 from dash.exceptions import PreventUpdate
 
-from graphs.common import (AXIS_LABELS, COLOR_CODES, RECOLOR_FLAGS,
+from analyzer.graphs.common import (AXIS_LABELS, COLOR_CODES, RECOLOR_FLAGS,
                            build_scatter, count_colors, update_legend_labels)
 
 

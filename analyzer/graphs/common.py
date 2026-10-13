@@ -1,6 +1,6 @@
 """Shared helpers for the graph modules.
 
-The analyzer hands the graph functions a ``Dataset`` (see taofi-analyzer.py)
+The analyzer hands the graph functions a ``Dataset`` (see analyzer/dataset.py)
 instead of a list of per-experiment dicts. Everything here works on numpy
 arrays so that a 500k-experiment database renders in well under a second.
 """

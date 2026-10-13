@@ -9,7 +9,7 @@ from dash.exceptions import PreventUpdate
 
 from analyzer.config import COLORS
 from analyzer.database import REQUIRED_COLUMNS, database_path, file_key, load_dataframe, query_error
-from graphs.common import COLOR_CODES, RECOLOR_FLAGS
+from analyzer.graphs.common import COLOR_CODES, RECOLOR_FLAGS
 
 # Loaded databases are cached per worker process.
 _DATASET_CACHE = OrderedDict()
