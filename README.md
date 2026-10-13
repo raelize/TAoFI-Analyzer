@@ -24,16 +24,32 @@ $ uv venv
 $ source .venv/bin/activate
 $ uv sync
 # 2. Run the analyzer:
-./taofi-analyzer
-usage: analyzer [-h] [--ip IP] [--port PORT] [--x X] [--y Y] [--refresh-interval REFRESH_INTERVAL] [--debug] [--version] directory
-analyzer: error: the following arguments are required: directory
+$ ./taofi-analyzer --help
+usage: analyzer [-h] [--ip IP] [--port PORT] [--x X] [--y Y]
+                [--database DATABASE] [--debug] [--version]
+                directory
+$ ./taofi-analyzer databases/
 ```
+
+The analyzer listens on `127.0.0.1:8000` by default (`--ip`/`--port`). Use `--database`, `--x` and `--y` to preselect a database and the axes.
 
 For better performance you can use `gunicorn` instead of the built-in server:
 
 ```bash
-# Activate the virtual environment and install the requirements as befefore
+# Activate the virtual environment and install the requirements as before
 # (Optional) Tweak the gunicorn.conf.py to your needs
 # Run the analyzer with gunicorn
 $ ANALYZER_DIRECTORY=<DIRECTORY> gunicorn taofi-analyzer:server
 ```
+
+With `gunicorn` the analyzer listens on `127.0.0.1:9393` (`ANALYZER_IP`/`ANALYZER_PORT`). `ANALYZER_DATABASE`, `ANALYZER_X` and `ANALYZER_Y` preselect a database and the axes.
+
+## Security
+
+The analyzer is meant to run on your own machine:
+
+- databases are only opened read-only
+- only users on the same machine (`127.0.0.1`) can switch to another directory; others only see the directory the analyzer was started with
+- queries typed in the analyzer are stopped after 60 seconds
+
+Anyone who can reach the analyzer can still run (read-only) SQL queries on its databases, so think twice before listening on another address than `127.0.0.1`.

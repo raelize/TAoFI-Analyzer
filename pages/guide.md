@@ -10,6 +10,10 @@ This is the manual the Raelize TAoFI-Analyzer.
 
 The graph tab is created from the data read from the database with FI experiments.
 
+Select a database from the directory shown at the top. When the analyzer runs on your own machine you can switch to another directory: type it (press enter) or use `Browse…`. Files that are not analyzer databases are listed, but can't be selected.
+
+With `Auto refresh` the graph is updated when the database changes (e.g., while experiments are still running).
+
 You can filter the database before it's fed into the graph engine by extending the query at the top.
 
 Some examples include:
@@ -36,7 +40,11 @@ The first field is the qualifier (i.e., `re.search(<qualifier>, response))`) and
 
 The data tab is synced with the graph configuration.
 
-You can squeeze the data (i.e., combine experiment with the same responses) or not.
+The columns are the columns of the `experiments` table of the database.
+
+You can squeeze the data (i.e., combine experiment with the same responses) or not. Squeezed, every number column is shown as a pair: `<column> >` (the smallest value) and `<column> <` (the largest value); other columns show the value of the first experiment.
+
+Every column can be sorted and filtered; number columns have number filters (e.g., greater than, in range).
 
 For each row of data, you can:
 
@@ -54,11 +62,11 @@ Use the column selector below the switches to choose which columns are shown (e.
 The information tab lists information related to the selected database.
 
 - arguments if available (i.e., in the `metadata` table of the database)
-- points if selected in the graph (i.e., on zoom or selection)
+- the zoomed area of the graph (double click the graph to reset it)
 - contents of Dash store used by the analyzer
 
-## Guide
+## Database
 
 ---
 
-The guide tab can be used to execute raw queries on the selected database.
+The database tab can be used to execute raw queries on the selected database (the first 100 rows are shown). Queries that take longer than 60 seconds are stopped.
