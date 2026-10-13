@@ -10,17 +10,14 @@ from functools import wraps
 from collections import OrderedDict
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
-from operator import itemgetter
 from os import listdir
 from pathlib import Path
 from typing import Dict
 from urllib.request import pathname2url
-import random
 
 import dash_bootstrap_components as dbc
 import numpy as np
 import pandas as pd
-import plotly.express as px
 from dash import ALL, MATCH, Dash, Input, Output, State, dcc, html, set_props
 from dash import callback_context as ctx
 from dash import no_update
@@ -129,18 +126,6 @@ _ROW_COLORS = {
     "B": "#d4e6f1",
     "Z": "#d6dbdf",
     "R": "#fadbd8",
-}
-
-_COLOR_CONFIG = {
-    "P": ("pink", "black", "timeout"),
-    "G": ("green", "white", "green"),
-    "Y": ("yellow", "black", "yellow"),
-    "M": ("magenta", "white", "magenta"),
-    "O": ("orange", "white", "orange"),
-    "C": ("cyan", "white", "cyan"),
-    "B": ("blue", "white", "blue"),
-    "Z": ("black", "white", "black"),
-    "R": ("red", "white", "red"),
 }
 
 for color in _COLORS:
@@ -309,63 +294,13 @@ def get_parameters(database_path):
 
 # new function for sqlite3 query
 def match_string(response, token):
-    if token.encode(errors="strict") in response:
-        return True
-    else:
-        return False
+    return token.encode() in response
 
 
 # new function for sqlite3 query
 def match_hex(response, token):
-    if bytes.fromhex(token) in response:
-        return True
-    else:
-        return False
+    return bytes.fromhex(token) in response
 
-
-
-class VariableNames:
-    def __init__(self, record):
-        self.id = self.get_variable_name(record, ["id"])
-        self.color = self.get_variable_name(record, ["color"])
-        self.normal = self.get_variable_name(record, ["normal", "normal_voltage"])
-        self.delay = self.get_variable_name(record, ["delay", "glitch_delay"])
-        self.length = self.get_variable_name(record, ["length", "glitch_length"])
-        self.voltage = self.get_variable_name(record, ["voltage", "glitch_voltage"])
-        self.power = self.get_variable_name(record, ["power", "glitch_power"])
-        self.response = self.get_variable_name(record, ["response"])
-        self.reset = self.get_variable_name(record, ["reset"])
-        self.x = self.get_variable_name(record, ["x"])
-        self.y = self.get_variable_name(record, ["y"])
-        self.z = self.get_variable_name(record, ["z"])
-
-    def get_variable_name(self, record, names):
-        for name in names:
-            if name in record:
-                return name
-        else:
-            return None
-
-
-def glitch_parameter_present(record, parameter):
-    if parameter in record and record[parameter] not in [None]:
-        return True
-    else:
-        return False
-
-
-def slice_response(response, s, e):
-    # slice the response
-    if s is None and e is None:
-        response = response
-    elif s is not None and e is None:
-        response = response[s:]
-    elif s is None and e is not None:
-        response = response[:e]
-    elif s is not None and e is not None:
-        response = response[s:e]
-
-    return response
 
 
 class Dataset:
@@ -378,11 +313,10 @@ class Dataset:
     def __init__(self, key, df):
         self.key = key
         self.df = df
-        self.names = VariableNames(df.columns)
-        responses = df[self.names.response]
+        responses = df["response"]
         self.resp_codes, self.resp_uniques = pd.factorize(responses, use_na_sentinel=False)
         self.resp_uniques = np.asarray(self.resp_uniques, dtype=object)
-        self.base_colors = df[self.names.color].to_numpy(dtype=object)
+        self.base_colors = df["color"].to_numpy(dtype=object)
         self.base_colors.flags.writeable = False
         self._mask_cache = {}
         self._recolor_cache = OrderedDict()
@@ -681,16 +615,15 @@ def build_table(dataset, colors, squeeze_records, response_s, response_e):
     "<column> <" (max) pair; other columns show the value of the first experiment.
     """
     df = dataset.df
-    v = dataset.names
 
     def shown(column):
-        if column in (v.response, "amount", "rlen", "hex(response)"):
+        if column in ("response", "amount", "rlen", "hex(response)"):
             return False
         # skip columns without any value (unless there are no rows at all)
         return df.empty or bool(df[column].notna().any())
 
     def values(column):
-        if column == v.color:
+        if column == "color":
             # as colored in the graph
             return colors
         values = df[column].to_numpy()
@@ -700,16 +633,14 @@ def build_table(dataset, colors, squeeze_records, response_s, response_e):
         return values
 
     def numeric(column):
-        return column != v.color and df[column].dtype.kind in "iuf"
+        return column != "color" and df[column].dtype.kind in "iuf"
 
     columns = [column for column in df.columns if shown(column)]
 
     # slice response
-    responses = df[v.response].to_numpy(dtype=object)
+    responses = df["response"].to_numpy(dtype=object)
     if response_s is not None or response_e is not None:
-        responses = np.array(
-            [slice_response(r, response_s, response_e) for r in responses], dtype=object
-        )
+        responses = np.array([r[response_s:response_e] for r in responses], dtype=object)
 
     if not squeeze_records:
         out = pd.DataFrame({column: values(column) for column in columns})
@@ -747,22 +678,6 @@ def get_table(dataset, config, squeeze_records, response_s, response_e):
         while len(_TABLE_CACHE) > _TABLE_CACHE_SIZE:
             _TABLE_CACHE.popitem(last=False)
     return table
-
-
-def give_xy_label(parameter):
-    labels = {
-        "normal": "(v)",
-        "normal_voltage": "(v)",
-        "length": "(ns)",
-        "glitch_length": "(ns)",
-        "delay": "(ns)",
-        "glitch_delay": "(ns)",
-        "power": "(%)",
-        "glitch_power": "(%)",
-        "voltage": "(v)",
-        "glitch_voltage": "(v)",
-    }
-    return labels.get(parameter, "")
 
 
 _LAST_TIMING = {}
@@ -1143,7 +1058,6 @@ def register_callbacks(app):
                 # min/max columns (and amount)
                 configs.append(
                     {
-                        "autoSize": True,
                         "maxWidth": 150,
                         "cellStyle": {"textAlign": "center"},
                         "headerClass": "header-center-aligned",
@@ -1153,7 +1067,6 @@ def register_callbacks(app):
             elif column in table.numeric or column in ["color", "rlen"]:
                 configs.append(
                     {
-                        "autoSize": True,
                         "maxWidth": 100,
                         "cellStyle": {"textAlign": "center"},
                         "headerClass": "header-center-aligned",
@@ -1164,7 +1077,6 @@ def register_callbacks(app):
                 if wraptext:
                     configs.append(
                         {
-                            "autoSize": True,
                             "width": 500,
                             "wrapText": True,
                             "autoHeight": True,
@@ -1181,7 +1093,6 @@ def register_callbacks(app):
                 if wraptext:
                     configs.append(
                         {
-                            "autoSize": False,
                             "width": 500,
                             "wrapText": True,
                             "autoHeight": True,
@@ -1197,11 +1108,7 @@ def register_callbacks(app):
                         }
                     )
             else:
-                configs.append(
-                    {
-                        "autoSize": True,
-                    }
-                )
+                configs.append({})
 
         hidden = set(hidden or [])
         numeric = table.numeric | {"rlen"}
@@ -1260,10 +1167,6 @@ def register_callbacks(app):
 
 
                 "enableCellTextSelection": True,
-                "enableRangeSelection": True,
-                "cellSelection": True,
-                "suppressCopyRowsToClipboard": False,
-                "suppressCopySingleCellRanges": False,
             },
             style={"height": "1000px"}
 
@@ -1365,17 +1268,6 @@ def register_callbacks(app):
 #
 # Layout
 #
-
-def callback_func1(value):
-    # do something
-    return result1
-
-def callback_func2(value):
-    # do something else
-    return result2
-
-def callback_func3(value):
-    return result3
 
 def create_layout(app):
 
