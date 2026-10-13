@@ -136,9 +136,19 @@ for color in _COLORS:
 #
 
 def file_key(path):
-    """Identity of a database file: changes whenever the file is (re)written."""
+    """Identity of a database file: changes whenever the file is (re)written.
+
+    In WAL mode new experiments are written to the -wal file first (the
+    database file itself only changes at a checkpoint), so that counts too.
+    """
     st = os.stat(path)
-    return (os.path.abspath(path), st.st_mtime_ns, st.st_size)
+    key = (os.path.abspath(path), st.st_mtime_ns, st.st_size)
+    try:
+        wal = os.stat(path + "-wal")
+        key += (wal.st_mtime_ns, wal.st_size)
+    except FileNotFoundError:
+        pass
+    return key
 
 
 def is_local_request():
