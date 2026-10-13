@@ -116,6 +116,19 @@ _PAGE_SIZE = 100
 
 _COLORS = ["green", "yellow", "magenta", "orange", "cyan", "blue", "black", "red"]
 
+# light background per color code for the rows of the data tab
+_ROW_COLORS = {
+    "P": "#fde2ec",
+    "G": "#d5f5e3",
+    "Y": "#fcf3cf",
+    "M": "#ebdef0",
+    "O": "#fae5d3",
+    "C": "#d1f2f5",
+    "B": "#d4e6f1",
+    "Z": "#d6dbdf",
+    "R": "#fadbd8",
+}
+
 _COLOR_CONFIG = {
     "P": ("pink", "black", "timeout"),
     "G": ("green", "white", "green"),
@@ -1174,33 +1187,10 @@ def register_callbacks(app):
         rowstyles = {
             "styleConditions": [
                 {
-                    "condition": "params.data.color == 'G'",
-                    "style": {"backgroundColor": "#d5f5e3"},
-                },
-                {
-                    "condition": "params.data.color == 'R'",
-                    "style": {"backgroundColor": "#fadbd8"},
-                },
-                {
-                    "condition": "params.data.color == 'Y'",
-                    "style": {"backgroundColor": "#fcf3cf"},
-                },
-                {
-                    "condition": "params.data.color == 'B'",
-                    "style": {"backgroundColor": "#d4e6f1"},
-                },
-                {
-                    "condition": "params.data.color == 'M'",
-                    "style": {"backgroundColor": "#ebdef0"},
-                },
-                {
-                    "condition": "params.data.color == 'O'",
-                    "style": {"backgroundColor": "#fae5d3"},
-                },
-                {
-                    "condition": "params.data.color == 'Z'",
-                    "style": {"backgroundColor": "#d6dbdf"},
-                },
+                    "condition": f"params.data.color == '{code}'",
+                    "style": {"backgroundColor": background},
+                }
+                for code, background in _ROW_COLORS.items()
             ],
             "defaultStyle": {"backgroundColor": "white", "color": "black"},
         }
