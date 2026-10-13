@@ -303,15 +303,11 @@ def register_callbacks(app):
         Output("data", "children"),
         Output("data-columns", "options"),
         Output("data-columns", "value"),
-        [
-            # Input("config-store", "data"),
-            # Input("graph", "figure"),
-            Input("switch-squeezedata", "value"),
-            Input("switch-wraptext", "value"),
-            Input("response_s", "value"),
-            Input("response_e", "value"),
-            Input('tabs', 'value')
-        ],
+        Input("switch-squeezedata", "value"),
+        Input("switch-wraptext", "value"),
+        Input("response_s", "value"),
+        Input("response_e", "value"),
+        Input("tabs", "value"),
         State("config-store", "data"),
         State("data-hidden-columns", "data"),
         prevent_initial_call=False,
@@ -326,133 +322,14 @@ def register_callbacks(app):
         # squeeze data (or not); only the column layout is needed here, the
         # rows are fetched page by page by get_rows()
         table = get_table(get_dataset(config), config, squeeze, response_s, response_e)
-        columns = table.columns
-
-        fields = []
-        configs = []
-
-        for column in columns:
-            fields.append(column)
-            if column in table.numeric and table.squeezed:
-                # min/max columns (and amount)
-                configs.append(
-                    {
-                        "maxWidth": 150,
-                        "cellStyle": {"textAlign": "center"},
-                        "headerClass": "header-center-aligned",
-                        "pinned": "left",
-                    }
-                )
-            elif column in table.numeric or column in ["color", "rlen"]:
-                configs.append(
-                    {
-                        "maxWidth": 100,
-                        "cellStyle": {"textAlign": "center"},
-                        "headerClass": "header-center-aligned",
-                        "pinned": "left",
-                    }
-                )
-            elif column in ["response"]:
-                if wraptext:
-                    configs.append(
-                        {
-                            "width": 500,
-                            "wrapText": True,
-                            "autoHeight": True,
-                        }
-                    )
-                else:
-                    configs.append(
-                        {
-                            "flex": 2,
-                            "minWidth": 300,
-                        }
-                    )
-            elif column in ["hex(response)"]:
-                if wraptext:
-                    configs.append(
-                        {
-                            "width": 500,
-                            "wrapText": True,
-                            "autoHeight": True,
-                            "cellStyle": {"font-family": "monospace"},
-                        }
-                    )
-                else:
-                    configs.append(
-                        {
-                            "flex": 3,
-                            "minWidth": 300,
-                            "cellStyle": {"font-family": "monospace"},
-                        }
-                    )
-            else:
-                configs.append({})
-
         hidden = set(hidden or [])
-        numeric = table.numeric | {"rlen"}
-        columnDefs = [
-            {
-                "field": field,
-                **config,
-                # number filters (greater than, in range, ...) for numbers; text filters otherwise
-                "filter": "agNumberColumnFilter" if field in numeric else "agTextColumnFilter",
-                "hide": field in hidden,
-            }
-            for field, config in zip(fields, configs)
-        ]
-
-        rowstyles = {
-            "styleConditions": [
-                {
-                    "condition": f"params.data.color == '{code}'",
-                    "style": {"backgroundColor": background},
-                }
-                for code, background in ROW_COLORS.items()
-            ],
-            "defaultStyle": {"backgroundColor": "white", "color": "black"},
-        }
-
-        if wraptext:
-            resize_strategy = {"type": "fitGridWidth"}
-        else:
-            resize_strategy = {"type": "fitCellContents"}
 
         # a new id per grid configuration makes the grid remount and re-request its rows
         grid_id = {"type": "data-grid", "index": f"{int(bool(squeeze))}-{int(bool(wraptext))}-{response_s}-{response_e}"}
+        grid = data_grid(grid_id, column_defs(table, wraptext, hidden), wraptext)
 
-        data = AgGrid(
-            id=grid_id,
-            columnDefs=columnDefs,
-            rowModelType="infinite",
-            defaultColDef={
-                "resizable": True,
-                "sortable": True,
-                "filter": True,
-                "checkboxSelection": False,
-            },
-            className="ag-theme-quartz",
-            getRowStyle=rowstyles,
-            dashGridOptions={
-                "pagination": True,
-                "paginationPageSize": _PAGE_SIZE,
-                "cacheBlockSize": _PAGE_SIZE,
-                "maxBlocksInCache": 10,
-                "rowBuffer": 0,
-                "animateRows": False,
-                "alwaysShowHorizontalScroll": True,
-                "autoSizeStrategy": resize_strategy,
-                "ensureDomOrder": True,
-
-
-                "enableCellTextSelection": True,
-            },
-            style={"height": "1000px"}
-
-        )
-
-        shown = [column for column in columns if column not in hidden]
-        return data, list(columns), shown
+        shown = [column for column in table.columns if column not in hidden]
+        return grid, table.columns, shown
 
     # callback for the column selector of the data tab: show/hide columns without rebuilding the grid
     @app.callback(
@@ -542,3 +419,68 @@ def register_callbacks(app):
             con.close()
 
         return df.to_string(index=False)
+
+
+def column_defs(table, wraptext, hidden):
+    """AG Grid column definitions for the columns of ``table``."""
+    centered = {"cellStyle": {"textAlign": "center"}, "headerClass": "header-center-aligned", "pinned": "left"}
+    numeric = table.numeric | {"rlen"}
+
+    definitions = []
+    for column in table.columns:
+        if column in table.numeric and table.squeezed:
+            # min/max columns (and amount)
+            definition = {"maxWidth": 150, **centered}
+        elif column in table.numeric or column in ["color", "rlen"]:
+            definition = {"maxWidth": 100, **centered}
+        elif column == "response":
+            definition = {"width": 500, "wrapText": True, "autoHeight": True} if wraptext else {"flex": 2, "minWidth": 300}
+        elif column == "hex(response)":
+            definition = {"width": 500, "wrapText": True, "autoHeight": True} if wraptext else {"flex": 3, "minWidth": 300}
+            definition["cellStyle"] = {"font-family": "monospace"}
+        else:
+            definition = {}
+
+        definitions.append(
+            {
+                "field": column,
+                **definition,
+                # number filters (greater than, in range, ...) for numbers; text filters otherwise
+                "filter": "agNumberColumnFilter" if column in numeric else "agTextColumnFilter",
+                "hide": column in hidden,
+            }
+        )
+    return definitions
+
+
+def data_grid(grid_id, columns, wraptext):
+    """The data tab's grid; its rows are requested page by page (see get_rows())."""
+    row_styles = {
+        "styleConditions": [
+            {"condition": f"params.data.color == '{code}'", "style": {"backgroundColor": background}}
+            for code, background in ROW_COLORS.items()
+        ],
+        "defaultStyle": {"backgroundColor": "white", "color": "black"},
+    }
+
+    return AgGrid(
+        id=grid_id,
+        columnDefs=columns,
+        rowModelType="infinite",
+        defaultColDef={"resizable": True, "sortable": True, "filter": True, "checkboxSelection": False},
+        className="ag-theme-quartz",
+        getRowStyle=row_styles,
+        dashGridOptions={
+            "pagination": True,
+            "paginationPageSize": _PAGE_SIZE,
+            "cacheBlockSize": _PAGE_SIZE,
+            "maxBlocksInCache": 10,
+            "rowBuffer": 0,
+            "animateRows": False,
+            "alwaysShowHorizontalScroll": True,
+            "autoSizeStrategy": {"type": "fitGridWidth"} if wraptext else {"type": "fitCellContents"},
+            "ensureDomOrder": True,
+            "enableCellTextSelection": True,
+        },
+        style={"height": "1000px"},
+    )
