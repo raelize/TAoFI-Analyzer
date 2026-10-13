@@ -5,3 +5,4 @@ databases/*
 !databases/g_CharacterizeRandom.py_20231019_204746.sqlite
 databases_test
 tmp
+*.egg-info/
