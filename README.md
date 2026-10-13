@@ -53,3 +53,24 @@ The analyzer is meant to run on your own machine:
 - queries typed in the analyzer are stopped after 60 seconds
 
 Anyone who can reach the analyzer can still run (read-only) SQL queries on its databases, so think twice before listening on another address than `127.0.0.1`.
+
+## Development
+
+The code lives in the `analyzer` package (`taofi-analyzer.py` only starts it):
+
+- `config.py`: what a browser tab shows (the config store) and the server settings
+- `database.py`: which databases may be read, read-only connections and queries
+- `dataset.py`: the loaded experiments and their (re)coloring
+- `table.py`: the rows of the data tab (squeeze, filter, sort, page)
+- `callbacks.py` and `layout.py`: the Dash app
+- `graphs/`: the graph types
+
+Run the tests and the linter with `uv`:
+
+```bash
+$ uv run pytest
+$ uv run ruff check
+# the browser tests (headless Chrome, or Playwright's Chromium via: uv run playwright install chromium)
+$ uv sync --group browser
+$ uv run pytest -m browser
+```
