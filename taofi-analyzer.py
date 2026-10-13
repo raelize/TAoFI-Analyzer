@@ -5,6 +5,8 @@ import re
 import sqlite3
 import sys
 import threading
+import time
+from functools import wraps
 from collections import OrderedDict
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
@@ -18,7 +20,7 @@ import dash_bootstrap_components as dbc
 import numpy as np
 import pandas as pd
 import plotly.express as px
-from dash import MATCH, Dash, Input, Output, State, dcc, html
+from dash import MATCH, Dash, Input, Output, State, dcc, html, set_props
 from dash import callback_context as ctx
 from dash import no_update
 from dash.exceptions import PreventUpdate
@@ -86,6 +88,7 @@ class AnalyzerConfig:
     argv: str = ""
     database: str = ""
     query: str = ""
+    dbkey: str = ""
     colors: Dict[str, str] = field(default_factory=dict)
 
 
@@ -591,6 +594,38 @@ def give_xy_label(parameter):
     return labels.get(parameter, "")
 
 
+_LAST_TIMING = {}
+
+
+def timed(label, base=None):
+    """Report how long a content-generating callback took in the header badge.
+
+    With ``base`` the badge also keeps showing the time of that earlier step,
+    e.g. the data table build next to the time of fetching one page of rows.
+    """
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            started = time.perf_counter()
+            result = func(*args, **kwargs)
+            elapsed = time.perf_counter() - started
+            _LAST_TIMING[label] = elapsed
+            shown = label
+            if base in _LAST_TIMING:
+                # e.g. the data table build plus the first page of rows
+                elapsed += _LAST_TIMING.pop(base)
+                shown = base
+            # the client-side timer is filled in by assets/timing.js
+            set_props("timing-label", {"children": f"{shown}: "})
+            set_props("timing", {"children": f"server ({elapsed:.2f} s)"})
+            return result
+
+        return wrapper
+
+    return decorator
+
+
 def database_exists(directory, database):
     if directory is None or database is None:
         return False
@@ -655,9 +690,21 @@ def register_callbacks(app):
     @app.callback(
         Output("database-dropdown", "options"),
         Input("update-button", "n_clicks"),
+        Input("refresh-timer", "n_intervals"),
     )
-    def update_database_list(nr_of_clicks):
+    def update_database_list(nr_of_clicks, n_intervals):
         return get_databases(_config.directory)
+
+    # callback for the auto refresh timer
+    @app.callback(
+        Output("refresh-timer", "disabled"),
+        Output("refresh-timer", "interval"),
+        Input("switch-autorefresh", "value"),
+        Input("refresh-seconds", "value"),
+    )
+    def update_refresh_timer(enabled, seconds):
+        seconds = max(1, int(seconds or 10))
+        return not enabled, seconds * 1000
 
     # callback for updating store
     @app.callback(
@@ -670,6 +717,7 @@ def register_callbacks(app):
             Input("database-dropdown", "value"),
             Input("x-dropdown", "value"),
             Input("y-dropdown", "value"),
+            Input("refresh-timer", "n_intervals"),
         ],
         State("query-input", "value"),
         State("config-store", "data"),
@@ -678,7 +726,7 @@ def register_callbacks(app):
         + [State(f"recolor-{color}-label", "value") for color in _COLORS],
     )
     # def update_store(nr_of_clicks, contents, query, database, x, y, store, *color_states):
-    def update_store(nr_of_clicks, database, x, y, query, store, jitter, *color_states):
+    def update_store(nr_of_clicks, database, x, y, n_intervals, query, store, jitter, *color_states):
         if database is None:
             raise PreventUpdate
 
@@ -691,6 +739,12 @@ def register_callbacks(app):
 
         # remove number of arguments
         database = database.split(" ")[0]
+
+        # auto refresh: only re-render when the database file has changed
+        dbkey = repr(file_key(os.path.join(config.directory, database)))
+        if ctx.triggered_id == "refresh-timer" and dbkey == config.dbkey:
+            raise PreventUpdate
+        config.dbkey = dbkey
 
         config.database = database
         config.x = x
@@ -753,13 +807,15 @@ def register_callbacks(app):
             Input("x-dropdown", "value"),
             Input("y-dropdown", "value"),
             Input("switch-fixgreen", "value"),
-            Input('graph-dropdown', 'value')
+            Input('graph-dropdown', 'value'),
+            Input("switch-hover", "value"),
         ],
         [State(f"recolor-{color}", "value") for color in _COLORS]
         + [State(f"recolor-{color}-label", "value") for color in _COLORS],
         prevent_initial_call=True,
     )
-    def update_graph(store, x, y, fixgreen, selected_callback, *color_states):
+    @timed("graph")
+    def update_graph(store, x, y, fixgreen, selected_callback, hover, *color_states):
         from graphs.scatter import scatter_func
         from graphs.scatter2 import scatter2_func
         from graphs.simple import simple_func
@@ -787,6 +843,9 @@ def register_callbacks(app):
         if selected_callback in CALLBACKS:
             callback_func = CALLBACKS[selected_callback]
             result = callback_func(x, y, fixgreen, dataset, config, _COLORS, *color_states)
+            if not hover:
+                # no hover lookups or hover labels at all (cheaper on huge plots)
+                result.update_layout(hovermode=False)
             return result
         raise PreventUpdate
 
@@ -806,6 +865,7 @@ def register_callbacks(app):
         State("config-store", "data"),
         prevent_initial_call=False,
     )
+    @timed("data")
     def update_data(squeeze, showhex, wraptext, response_s, response_e, tab, store):
         config = AnalyzerConfig(**store)
 
@@ -979,6 +1039,7 @@ def register_callbacks(app):
         State("response_e", "value"),
         prevent_initial_call=True,
     )
+    @timed("rows", base="data")
     def get_rows(request, store, squeeze, response_s, response_e):
         if request is None:
             raise PreventUpdate
@@ -1006,6 +1067,7 @@ def register_callbacks(app):
         State('config-store', 'data'),
         prevent_initial_call=True
     )
+    @timed("query")
     def execute_query(n_clicks, n_submit1, n_submit2, select_cols, where_condition, data):
         
         con = sqlite3.connect(f"{data['directory']}/{data['database']}")
@@ -1051,8 +1113,23 @@ def create_layout(app):
         html.Div(
             [
                 html.H4("Research by Raelize"),
+                html.Span(
+                    [
+                        html.Span("", id="timing-label"),
+                        html.Span("", id="timing-client", title="time from sending the request until the browser rendered the result"),
+                        html.Span("", id="timing", title="time spent in the server callback"),
+                    ],
+                    style={"fontFamily": "monospace", "color": "#666"},
+                ),
             ],
-            style={"width": "80%", "border-style": "none", "margin": "0 auto"},
+            style={
+                "width": "80%",
+                "border-style": "none",
+                "margin": "0 auto",
+                "display": "flex",
+                "justifyContent": "space-between",
+                "alignItems": "baseline",
+            },
         ),
         html.Div([
             dcc.Tabs(id="tabs", value='tab-graph', children=[
@@ -1082,6 +1159,7 @@ def create_layout(app):
         Input('tabs', 'value'),
         State('config-store', 'data')
     )
+    @timed("tab")
     def render_content(tab, store):
         if tab == 'tab-graph':
 
@@ -1128,6 +1206,24 @@ def create_layout(app):
                                         placeholder="SELECT * FROM experiments WHERE",
                                         persistence=True,
                                     ),
+                                    dbc.Switch(
+                                        id="switch-autorefresh",
+                                        value=False,
+                                        label="Auto refresh",
+                                        className="ms-3 mb-0 text-nowrap",
+                                        persistence=True,
+                                    ),
+                                    dcc.Input(
+                                        id="refresh-seconds",
+                                        type="number",
+                                        value=10,
+                                        min=1,
+                                        step=1,
+                                        placeholder="sec",
+                                        style={"width": "70px", "marginLeft": "5px"},
+                                        persistence=True,
+                                    ),
+                                    dcc.Interval(id="refresh-timer", interval=10000, disabled=True),
                                 ],
                                 style={"display": "flex", "alignItems": "center"},
                             )
@@ -1187,10 +1283,15 @@ def create_layout(app):
                         [
                             html.Center(
                                 [
-                                    dcc.Graph(
-                                        id="graph", 
-                                        config={'displayModeBar': True},
-                                        style={"width": "80%"}),
+                                    dcc.Loading(
+                                        dcc.Graph(
+                                            id="graph",
+                                            config={'displayModeBar': True},
+                                            style={"width": "80%"}),
+                                        type="circle",
+                                        delay_show=150,
+                                        overlay_style={"visibility": "visible", "opacity": 0.4},
+                                    ),
                                 ]
                             ),
                         ]
@@ -1204,32 +1305,43 @@ def create_layout(app):
                                     id="switch-fixgreen",
                                     value=True,
                                     label="Do not recolor green experiments",
-                                    style={},
+                                    className="d-inline-block me-3",
                                 )
                             ),
-                            *(
-                                input_component
-                                for color in _COLORS
-                                for input_component in [
-                                    dcc.Input(
-                                        id=f"recolor-{color}",
-                                        type="text",
-                                        placeholder=f"{color}",
-                                        style={"width": "15%"},
-                                        persistence=True,
-                                    ),
-                                    dcc.Input(
-                                        id=f"recolor-{color}-label",
-                                        type="text",
-                                        placeholder=f"{color}-label",
-                                        style={
-                                            "width": "15%",
-                                            "margin-right": "10px",
-                                            "margin-bottom": "10px",
-                                        },
-                                        persistence=True,
-                                    ),
-                                ]
+                            html.Span(
+                                dbc.Switch(
+                                    id="switch-hover",
+                                    value=True,
+                                    label="Show hover info on the graph",
+                                    className="d-inline-block me-3",
+                                )
+                            ),
+                            html.Div(
+                                [
+                                    input_component
+                                    for color in _COLORS
+                                    for input_component in [
+                                        dcc.Input(
+                                            id=f"recolor-{color}",
+                                            type="text",
+                                            placeholder=f"{color}",
+                                            style={"width": "15%"},
+                                            persistence=True,
+                                        ),
+                                        dcc.Input(
+                                            id=f"recolor-{color}-label",
+                                            type="text",
+                                            placeholder=f"{color}-label",
+                                            style={
+                                                "width": "15%",
+                                                "margin-right": "10px",
+                                                "margin-bottom": "10px",
+                                            },
+                                            persistence=True,
+                                        ),
+                                    ]
+                                ],
+                                className="mt-2",
                             ),
                         ]
                     )
@@ -1280,7 +1392,11 @@ def create_layout(app):
                         ),
                         dbc.Card(
                             dbc.CardBody([
-                                html.Div(
+                                dcc.Loading(
+                                    type="circle",
+                                    delay_show=150,
+                                    overlay_style={"visibility": "visible", "opacity": 0.4},
+                                    children=html.Div(
                                         id="data",
                                         className="border-0 p-2 bg-light rounded",
                                         style={
@@ -1293,6 +1409,7 @@ def create_layout(app):
                                             "border-style": "none",
                                         }
                                     ),
+                                ),
                             ]),
                         )
                     ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
@@ -1365,7 +1482,7 @@ def create_layout(app):
                         ], style={"display": "flex", "alignItems": "center"}),
                     ])
                 ]),
-                html.Pre(id='query-output')
+                dcc.Loading(html.Pre(id='query-output'), type="circle", delay_show=150)
             ],style={"width": "80%", "border-style": "none", "margin": "0 auto"})
         elif tab == 'tab-guide':
             with open('pages/guide.md', 'r', encoding='utf-8') as f:
@@ -1445,6 +1562,18 @@ else:
         raise FileNotFoundError(
             f"Directory {_config.directory} does not exist. Please set the environment variable ANALYZER_DIRECTORY."
         )
+    # same defaults as the command line (None, not ""), optionally preset via env
+    _config.database = os.environ.get("ANALYZER_DATABASE")
+    _config.x = os.environ.get("ANALYZER_X")
+    _config.y = os.environ.get("ANALYZER_Y")
 
     register_callbacks(app)
     create_layout(app)
+
+    # generate the index page once now: this registers the component script
+    # bundles. With several gunicorn workers a worker may otherwise be asked
+    # for a bundle before it has served an index page, which fails with
+    # "dash is not a registered library" and leaves the browser with a blank app.
+    with app.server.test_request_context():
+        app._setup_server()
+        app.index()
