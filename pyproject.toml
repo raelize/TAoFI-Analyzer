@@ -15,8 +15,16 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["basedpyright>=1.29.5", "ruff>=0.12.2"]
+dev = [
+    "basedpyright>=1.29.5",
+    "pytest>=9.1.1",
+    "ruff>=0.12.2",
+]
 
 [tool.setuptools]
 # only the analyzer is Python code (pages/, assets/ and databases/ are data)
 packages = ["analyzer", "analyzer.graphs"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
