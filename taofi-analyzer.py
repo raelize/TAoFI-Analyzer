@@ -25,6 +25,16 @@ from dash_ag_grid import AgGrid
 from flask import has_request_context, request
 
 from graphs.common import COLOR_CODES, RECOLOR_FLAGS
+from graphs.scatter import scatter_func
+from graphs.scatter2 import scatter2_func
+from graphs.simple import simple_func
+
+# graph types (see the graph dropdown)
+GRAPHS = {
+    "scatter": scatter_func,
+    "scatter2": scatter2_func,
+    "simple": simple_func,
+}
 
 try:
     import tomllib  # Python 3.11+
@@ -946,68 +956,39 @@ def register_callbacks(app):
         config = AnalyzerConfig.from_store(store)
         return config.argv
 
-    # callback for x list
+    # callback for the x and y lists
     @app.callback(
         Output("x-dropdown", "options"),
-        Input("database-dropdown", "value"),
-        State("config-store", "data"),
-        prevent_initial_call=True,
-    )
-    def update_dropdown_x(database, store):
-        path = database_path(store.get("directory"), database)
-        if path is None:
-            raise PreventUpdate
-        return get_parameters(path)
-
-    # callback for y list
-    @app.callback(
         Output("y-dropdown", "options"),
         Input("database-dropdown", "value"),
         State("config-store", "data"),
         prevent_initial_call=True,
     )
-    def update_dropdown_y(database, store):
+    def update_dropdown_xy(database, store):
         path = database_path(store.get("directory"), database)
         if path is None:
             raise PreventUpdate
-        return get_parameters(path)
+        parameters = get_parameters(path)
+        return parameters, parameters
 
 
 
     # callback graph; chained from update_store()
     @app.callback(
         Output("graph", "figure"),
-        [
-            Input("config-store", "data"),
-            Input("x-dropdown", "value"),
-            Input("y-dropdown", "value"),
-            Input("switch-hover", "value"),
-        ],
+        Input("config-store", "data"),
+        Input("switch-hover", "value"),
         prevent_initial_call=True,
     )
     @timed("graph")
-    def update_graph(store, x, y, hover):
-        from graphs.scatter import scatter_func
-        from graphs.scatter2 import scatter2_func
-        from graphs.simple import simple_func
-        
-        CALLBACKS = {
-            'scatter': scatter_func,
-            'scatter2': scatter2_func,
-            'simple': simple_func
-        }
-
+    def update_graph(store, hover):
         config = AnalyzerConfig.from_store(store)
+        x, y = config.x, config.y
 
         # the recolor fields as stored by update_store(), so that the data tab
         # (which colors from the store as well) shows the same colors
         regexes = [config.colors.get(color, [None, None])[0] for color in _COLORS]
         labels = [config.colors.get(color, [None, None])[1] for color in _COLORS]
-
-        if ctx.triggered_id == "config-store":
-            # update x and y
-            x = config.x
-            y = config.y
 
         # prevent update
         if any(v is None for v in [x, y]):
@@ -1016,8 +997,8 @@ def register_callbacks(app):
         dataset = get_dataset(config)
 
         # create graph
-        if config.graph in CALLBACKS:
-            callback_func = CALLBACKS[config.graph]
+        if config.graph in GRAPHS:
+            callback_func = GRAPHS[config.graph]
             result = callback_func(x, y, config.fixgreen, dataset, config, _COLORS, *regexes, *labels)
             if not hover:
                 # no hover lookups or hover labels at all (cheaper on huge plots)
