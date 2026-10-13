@@ -1390,7 +1390,7 @@ def create_layout(app):
     def render_content(tab, store):
         if tab == 'tab-graph':
 
-            # apply state when available
+            # apply state when available (the CLI/env presets are the initial store)
             database = store.get('database') if store else None
             x = store.get('x') if store else None
             y = store.get('y') if store else None
@@ -1398,6 +1398,7 @@ def create_layout(app):
             local = is_local_request()
             directory = (store.get('directory') if store and local else None) or _config.directory
             fixgreen = store.get('fixgreen', True) if store else True
+            jitter = (store.get('jitter') if store else None) or 0
 
             content = html.Div([
                 dbc.Card(
@@ -1517,7 +1518,7 @@ def create_layout(app):
                                 style={"width": "100%"},
                                 options=get_databases(data_directory(directory) or _config.directory),
                                 placeholder="database",
-                                value=_config.database or database,
+                                value=database,
                             ),
                             html.Div(
                                 [
@@ -1525,18 +1526,18 @@ def create_layout(app):
                                         id="x-dropdown",
                                         style={"width": "100%"},
                                         placeholder="x-axis",
-                                        value=_config.x or x,
+                                        value=x,
                                     ),
                                     dcc.Dropdown(
                                         id="y-dropdown",
                                         style={"width": "100%"},
                                         placeholder="y-axis",
-                                        value=_config.y or y,
+                                        value=y,
                                     ),
                                     dcc.Input(
                                         id="jitter-input",
                                         type="number",
-                                        value=0,
+                                        value=jitter,
                                         style={"width": "100%"},
                                     ),
                                 ],
