@@ -97,7 +97,9 @@ class Table:
     def page(self, start, end, sort_model, filter_model):
         indices = self.select(sort_model, filter_model)
         page_indices = indices[start:end]
-        rows = self.df.iloc[page_indices].to_dict("records")
+        page = self.df.iloc[page_indices]
+        # NULL values as None (null in JSON), not NaN
+        rows = page.astype(object).where(page.notna(), None).to_dict("records")
         for row, index in zip(rows, page_indices):
             response = self.responses[index]
             row["rlen"] = len(response)
