@@ -9,10 +9,9 @@ import time
 from functools import wraps
 from collections import OrderedDict
 from contextlib import closing
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from os import listdir
 from pathlib import Path
-from typing import Dict
 from urllib.request import pathname2url
 
 import dash_bootstrap_components as dbc
@@ -23,7 +22,6 @@ from dash import callback_context as ctx
 from dash import no_update
 from dash.exceptions import PreventUpdate
 from dash_ag_grid import AgGrid
-from dataclasses_json import dataclass_json
 from flask import has_request_context, request
 
 from graphs.common import COLOR_CODES, RECOLOR_FLAGS
@@ -76,23 +74,32 @@ PROJECT_METADATA = get_project_metadata()
 #
 
 
-@dataclass_json
+# recolor targets, in the order of the recolor input fields
+_COLORS = ["green", "yellow", "magenta", "orange", "cyan", "blue", "black", "red"]
+
+
 @dataclass
 class AnalyzerConfig:
-    serverip: str = "127.0.0.1"
-    serverport: int = 8080
+    """What the browser shows; kept per browser tab in the config-store."""
+
     directory: str = ""
-    database: str = ""
-    y: str = ""
-    x: str = ""
-    jitter: int = 0
+    database: str | None = None
+    x: str | None = None
+    y: str | None = None
+    jitter: float = 0
     argv: str = ""
-    database: str = ""
     query: str = ""
     dbkey: str = ""
     graph: str = "scatter"
     fixgreen: bool = True
-    colors: Dict[str, str] = field(default_factory=dict)
+    # color -> [regex, label]
+    colors: dict[str, list[str | None]] = field(default_factory=lambda: {color: [None, None] for color in _COLORS})
+
+    @classmethod
+    def from_store(cls, store):
+        """Config from the config-store, ignoring unknown keys (e.g. from a page of an older version)."""
+        names = {f.name for f in fields(cls)}
+        return cls(**{key: value for key, value in (store or {}).items() if key in names})
 
 
 #
@@ -113,8 +120,6 @@ _PAGE_SIZE = 100
 _MAX_ROWS = 1000  # per request of the data grid
 _QUERY_TIMEOUT = 60  # seconds, for queries entered by the user
 
-_COLORS = ["green", "yellow", "magenta", "orange", "cyan", "blue", "black", "red"]
-
 # light background per color code for the rows of the data tab
 _ROW_COLORS = {
     "P": "#fde2ec",
@@ -128,8 +133,6 @@ _ROW_COLORS = {
     "R": "#fadbd8",
 }
 
-for color in _COLORS:
-    _config.colors[color] = [None, None]
 
 #
 # Functions
@@ -888,7 +891,7 @@ def register_callbacks(app):
     )
     # def update_store(nr_of_clicks, contents, query, database, x, y, store, *color_states):
     def update_store(nr_of_clicks, database, x, y, n_intervals, fixgreen, graph, directory, query, store, jitter, *color_states):
-        config = AnalyzerConfig(**store)
+        config = AnalyzerConfig.from_store(store)
 
         directory = data_directory(directory)
         if directory is None:
@@ -940,7 +943,7 @@ def register_callbacks(app):
         Input("config-store", "data"),
     )
     def update_argv(store):
-        config = AnalyzerConfig(**store)
+        config = AnalyzerConfig.from_store(store)
         return config.argv
 
     # callback for x list
@@ -994,7 +997,7 @@ def register_callbacks(app):
             'simple': simple_func
         }
 
-        config = AnalyzerConfig(**store)
+        config = AnalyzerConfig.from_store(store)
 
         # the recolor fields as stored by update_store(), so that the data tab
         # (which colors from the store as well) shows the same colors
@@ -1042,7 +1045,7 @@ def register_callbacks(app):
     )
     @timed("data")
     def update_data(squeeze, wraptext, response_s, response_e, tab, store, hidden):
-        config = AnalyzerConfig(**store)
+        config = AnalyzerConfig.from_store(store)
 
         if not config.database:
             raise PreventUpdate
@@ -1217,7 +1220,7 @@ def register_callbacks(app):
         if request is None:
             raise PreventUpdate
 
-        config = AnalyzerConfig(**store)
+        config = AnalyzerConfig.from_store(store)
         if not config.database:
             raise PreventUpdate
 
@@ -1764,8 +1767,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    _config.serverip = args.ip
-    _config.serverport = args.port
     _config.directory = os.path.abspath(args.directory[0])
     _config.x = args.x
     _config.y = args.y
@@ -1774,7 +1775,7 @@ if __name__ == "__main__":
     register_callbacks(app)
     create_layout(app)
 
-    app.run(host=_config.serverip, port=_config.serverport, debug=args.debug)
+    app.run(host=args.ip, port=args.port, debug=args.debug)
 else:
     # this path is taken when started with e.g. unicorn
     check_env()
