@@ -208,7 +208,12 @@ def connect(path):
     return sqlite3.connect(uri, uri=True)
 
 
+# columns the analyzer needs in the experiments table
+REQUIRED_COLUMNS = ("color", "response")
+
+
 def get_number_of_experiments(directory, database):
+    """Number of experiments, or None if the file is not an analyzer database."""
     database_path = os.path.join(directory, database)
 
     try:
@@ -217,8 +222,13 @@ def get_number_of_experiments(directory, database):
             return _COUNT_CACHE[key]
         with closing(connect(database_path)) as connection:
             with closing(connection.cursor()) as cursor:
-                cursor.execute("SELECT COUNT(*) FROM experiments")
-                count = cursor.fetchone()[0]
+                cursor.execute("SELECT name FROM pragma_table_info('experiments')")
+                columns = {row[0] for row in cursor.fetchall()}
+                if not all(column in columns for column in REQUIRED_COLUMNS):
+                    count = None
+                else:
+                    cursor.execute("SELECT COUNT(*) FROM experiments")
+                    count = cursor.fetchone()[0]
         _COUNT_CACHE[key] = count
         return count
     except Exception as e:
@@ -233,14 +243,16 @@ def get_databases(directory):
             databases.append(file)
     databases.sort(reverse=True)
 
-    # transform to options
+    # transform to options; other sqlite files are shown, but can't be selected
     databases_options = []
-    for index in range(len(databases)):
-        label = "%s (%d)" % (
-            databases[index],
-            get_number_of_experiments(directory, databases[index]),
-        )
-        databases_options.append({"label": label, "value": databases[index]})
+    for database in databases:
+        count = get_number_of_experiments(directory, database)
+        if count is None:
+            databases_options.append(
+                {"label": f"{database} (not an analyzer database)", "value": database, "disabled": True}
+            )
+        else:
+            databases_options.append({"label": f"{database} ({count})", "value": database})
 
     return databases_options
 
@@ -461,6 +473,11 @@ def get_dataset(config):
         df = load_dataframe(path, config.query or "")
     except Exception as e:
         print("ERROR (get_dataset): %s" % (e))
+        raise PreventUpdate
+
+    missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
+    if missing:
+        print("ERROR (get_dataset): %s has no %s column" % (config.database, ", ".join(missing)))
         raise PreventUpdate
 
     dataset = Dataset(key, df)
