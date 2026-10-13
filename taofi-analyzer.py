@@ -2,19 +2,13 @@
 import argparse
 import os
 import sys
-from pathlib import Path
+import tomllib
 
 from dash import Dash
 
 from analyzer.callbacks import register_callbacks
 from analyzer.config import server_config
 from analyzer.layout import create_layout
-
-try:
-    import tomllib  # Python 3.11+
-except ImportError:
-    import tomli as tomllib  # Backport for <3.11
-
 
 #
 # PROJECT METADATA
@@ -23,42 +17,23 @@ except ImportError:
 
 def get_project_metadata():
     """Load project metadata from pyproject.toml."""
-    default_metadata = {
+    metadata = {
         "version": "2.1.0",
         "description": "A Dash-based web application for analyzing glitch experiment data",
     }
 
+    pyproject_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pyproject.toml")
     try:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        pyproject_path = Path(os.path.join(current_dir, "pyproject.toml"))
-        if pyproject_path.exists():
-            with open(pyproject_path, "rb") as f:
-                data = tomllib.load(f)
-                project = data.get("project", {})
-                return {
-                    "version": project.get("version", default_metadata["version"]),
-                    "description": project.get(
-                        "description", default_metadata["description"]
-                    ),
-                }
-        else:
-            print(
-                f"WARNING: pyproject.toml not found at {pyproject_path}. Using default metadata.",
-                file=sys.stderr,
-            )
-        return default_metadata
-    except Exception:
-        return default_metadata
+        with open(pyproject_path, "rb") as f:
+            project = tomllib.load(f).get("project", {})
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        print(f"WARNING: can't read {pyproject_path} ({e}). Using default metadata.", file=sys.stderr)
+        return metadata
+
+    return {key: project.get(key, default) for key, default in metadata.items()}
 
 
 PROJECT_METADATA = get_project_metadata()
-
-
-def check_env() -> None:
-    required = ["ANALYZER_DIRECTORY"]
-    missing = [var for var in required if var not in os.environ]
-    if missing:
-        raise ValueError(f"Missing required environment variables: {missing}")
 
 
 #
@@ -73,6 +48,22 @@ app.css.config.serve_locally = True
 app.scripts.config.serve_locally = True
 server = app.server
 
+
+def setup(directory, database=None, x=None, y=None):
+    """Configure the analyzer (directory and presets) and create its page."""
+    directory = os.path.abspath(directory)
+    if not os.path.isdir(directory):
+        raise FileNotFoundError(f"Directory {directory} does not exist.")
+
+    server_config.directory = directory
+    server_config.database = database
+    server_config.x = x
+    server_config.y = y
+
+    register_callbacks(app)
+    create_layout(app)
+
+
 #
 # Main
 #
@@ -82,12 +73,12 @@ if __name__ == "__main__":
         description=f"Raelize Glitch Analyzer v{PROJECT_METADATA['version']} - {PROJECT_METADATA['description']}",
         prog="analyzer",
     )
-    parser.add_argument("--ip", help="Server port", type=str, default="127.0.0.1")
+    parser.add_argument("--ip", help="Address to listen on", type=str, default="127.0.0.1")
     parser.add_argument("--port", help="Server port", type=int, default=8000)
-    parser.add_argument("directory", nargs="+", help="Database directorys", type=str)
+    parser.add_argument("directory", help="Directory with the databases", type=str)
     parser.add_argument("--x", required=False, help="Preset the x parameter")
     parser.add_argument("--y", required=False, help="Preset the y parameter")
-    parser.add_argument("--database", required=False, help="Database selected")
+    parser.add_argument("--database", required=False, help="Preset the database")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {PROJECT_METADATA['version']}"
@@ -95,30 +86,20 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    server_config.directory = os.path.abspath(args.directory[0])
-    server_config.x = args.x
-    server_config.y = args.y
-    server_config.database = args.database 
-
-    register_callbacks(app)
-    create_layout(app)
+    setup(args.directory, args.database, args.x, args.y)
 
     app.run(host=args.ip, port=args.port, debug=args.debug)
 else:
-    # this path is taken when started with e.g. unicorn
-    check_env()
-    server_config.directory = os.path.abspath(os.environ.get("ANALYZER_DIRECTORY", "./databases"))
-    if not Path(server_config.directory).absolute().exists():
-        raise FileNotFoundError(
-            f"Directory {server_config.directory} does not exist. Please set the environment variable ANALYZER_DIRECTORY."
-        )
-    # same defaults as the command line (None, not ""), optionally preset via env
-    server_config.database = os.environ.get("ANALYZER_DATABASE")
-    server_config.x = os.environ.get("ANALYZER_X")
-    server_config.y = os.environ.get("ANALYZER_Y")
+    # this path is taken when started with e.g. gunicorn, configured via the environment
+    if "ANALYZER_DIRECTORY" not in os.environ:
+        raise ValueError("Missing required environment variable: ANALYZER_DIRECTORY")
 
-    register_callbacks(app)
-    create_layout(app)
+    setup(
+        os.environ["ANALYZER_DIRECTORY"],
+        os.environ.get("ANALYZER_DATABASE"),
+        os.environ.get("ANALYZER_X"),
+        os.environ.get("ANALYZER_Y"),
+    )
 
     # generate the index page once now: this registers the component script
     # bundles. With several gunicorn workers a worker may otherwise be asked
