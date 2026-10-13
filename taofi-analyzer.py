@@ -1180,8 +1180,16 @@ def register_callbacks(app):
                 )
 
         hidden = set(hidden or [])
+        numeric = table.numeric | {"rlen"}
         columnDefs = [
-            {"field": field, **config, "hide": field in hidden} for field, config in zip(fields, configs)
+            {
+                "field": field,
+                **config,
+                # number filters (greater than, in range, ...) for numbers; text filters otherwise
+                "filter": "agNumberColumnFilter" if field in numeric else "agTextColumnFilter",
+                "hide": field in hidden,
+            }
+            for field, config in zip(fields, configs)
         ]
 
         rowstyles = {
