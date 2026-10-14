@@ -24,9 +24,17 @@ def remote(dash_client):
     return dash_client("10.1.2.3")
 
 
-def select(client, store, database=EXAMPLE_DATABASE, directory=None, trigger="update-button.n_clicks", query="",
-           graph="scatter", fixgreen=True, x="delay", y="length", z=None, recolor=None):
+def select(client, store, trigger="update-button.n_clicks", **fields):
     """update_store(): what happens when the user selects a database and clicks Update."""
+    values = select_values(store, **fields)
+    if trigger and trigger.endswith(".n_submit"):
+        # (enter pressed)
+        values[trigger] = 1
+    return client.call("config-store.data", values, trigger)
+
+
+def select_values(store, database=EXAMPLE_DATABASE, directory=None, query="", graph="scatter", fixgreen=True,
+                  x="delay", y="length", z=None, recolor=None):
     values = {
         "update-button.n_clicks": 1, "database-dropdown.value": database, "x-dropdown.value": x, "y-dropdown.value": y,
         "z-dropdown.value": z,
@@ -37,7 +45,7 @@ def select(client, store, database=EXAMPLE_DATABASE, directory=None, trigger="up
     for color in COLORS:
         values[f"recolor-{color}.value"] = (recolor or {}).get(color)
         values[f"recolor-{color}-label.value"] = None
-    return client.call("config-store.data", values, trigger)
+    return values
 
 
 @pytest.fixture
@@ -182,7 +190,8 @@ def test_switch_directory(client, store, tmp_path, make_database):
 
 def test_remote_users_cant_switch_directory(remote, tmp_path, make_database):
     make_database("other.sqlite")
-    store = remote.layout_store()
+    # (not a new page: nothing to restore)
+    store = dict(remote.layout_store(), fields_restored=True)
     code, _ = select(remote, store, database=None, directory=str(tmp_path), trigger="directory-input.value")
     assert code == 204
     code, response = remote.call("database-dropdown.options", {"directory-input.value": str(tmp_path)}, "directory-input.value")
@@ -277,7 +286,7 @@ def test_data_tab_auto_refresh(client, tmp_path, make_database):
     ("query-input.n_submit", True),
     ("recolor-red.n_submit", True),
     ("jitter-input.n_submit", True),
-    (None, True),  # the graph tab is shown (e.g. after a reload, with the fields as they were)
+    (None, False),  # the graph tab is shown again (the fields may contain text that wasn't applied)
     ("x-dropdown.value", False),
     ("graph-dropdown.value", False),
 ])
@@ -287,6 +296,28 @@ def test_text_fields_are_applied_with_update_or_enter(client, store, trigger, ap
     assert new["x"] == "id"
     assert (new["query"] == "delay > 1") is applied
     assert (new["colors"]["red"][0] == "x") is applied
+
+
+def test_showing_the_graph_tab_doesnt_apply_the_text_fields(client, store):
+    """Shown (again), all inputs of the graph tab count as triggered, the Update button (0 clicks) first."""
+    values = {**select_values(store, query="typed"), "update-button.n_clicks": 0}
+    code, response = client.call("config-store.data", values, "update-button.n_clicks")
+    assert response["config-store"]["data"]["query"] == store["query"]
+
+
+def test_the_applied_text_fields_are_restored_on_a_new_page(client):
+    """E.g. after a reload: the text fields as applied before (kept by the browser), not as typed."""
+    applied = {"query": "delay > 1", "jitter": 2, "colors": {"red": ["crash", "crashed"]}}
+    values = {"applied-fields.data": applied}
+    code, response = client.call("config-store.data", {**select_values(client.layout_store(), query="typed"), **values}, None)
+    store = response["config-store"]["data"]
+    assert (store["query"], store["jitter"], store["colors"]["red"], store["fields_restored"]) == ("delay > 1", 2, ["crash", "crashed"], True)
+    assert (response["query-input"]["value"], response["recolor-red"]["value"], response["recolor-red-label"]["value"]) == \
+        ("delay > 1", "crash", "crashed")
+    # applying them: kept by the browser
+    _, response = select(client, store, query="delay > 5", recolor={"red": "x"})
+    assert response["applied-fields"]["data"]["query"] == "delay > 5"
+    assert response["applied-fields"]["data"]["colors"]["red"] == ["x", None]
 
 
 def append(path):

@@ -147,10 +147,26 @@ def test_enter_applies_the_text_fields(page):
     page.fill("#recolor-red-label", "everything")
     page.press("#recolor-red-label", "Enter")
     page.wait_for_function(f"{PLOT}.data.some((trace) => trace.name.startsWith('everything'))", timeout=10000)
-    # after a reload the fields are as they were, and applied
+    # after a reload the fields are as they were applied, and applied
+    page.fill("#query-input", "typed, not applied")
     page.reload()
     page.wait_for_function(f"{GRAPH_READY} && {PLOT}.data.some((trace) => trace.name.startsWith('everything'))", timeout=20000)
     assert legend_title(page) != "Classification ( 6,843 ):"
+    assert page.input_value("#query-input") == "delay > 1900"
+    assert page.input_value("#recolor-red") == "^"
+    # switching tabs doesn't apply what was typed
+    page.fill("#query-input", "delay > 1950")
+    open_tab(page, "Data")
+    page.wait_for_selector(".ag-row", timeout=20000)
+    open_tab(page, "Graph")
+    page.wait_for_function(GRAPH_READY, timeout=20000)
+    page.wait_for_timeout(1000)
+    assert page.input_value("#query-input") == "delay > 1900"
+    title = legend_title(page)
+    page.press("#query-input", "End")
+    page.fill("#query-input", "delay > 1950")
+    page.press("#query-input", "Enter")
+    page.wait_for_function(f"{PLOT}.layout.legend.title.text !== {title!r}", timeout=10000)
 
 
 def test_clicking_a_point(page):

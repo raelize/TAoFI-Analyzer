@@ -23,6 +23,8 @@ class AnalyzerConfig:
     dbkey: str = ""
     graph: str = "scatter"
     fixgreen: bool = True
+    # whether the text fields applied before (e.g. before a reload of the page) are restored (see update_store())
+    fields_restored: bool = False
     # color -> [regex, label]
     colors: dict[str, list[str | None]] = field(default_factory=lambda: {color: [None, None] for color in COLORS})
 

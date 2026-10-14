@@ -26,6 +26,8 @@ def create_layout(app):
     app.layout = html.Div(
         [
             dcc.Store(id="config-store", data=asdict(server_config)),
+            # the text fields of the graph tab as last applied, kept by the browser (see update_store())
+            dcc.Store(id="applied-fields", storage_type="local"),
             dcc.Store(id="data-hidden-columns", data=["hex(response)"], storage_type="local"),
             dcc.Store(id="zoom-store"),
             # timings of the server callbacks (see timing.py)
@@ -123,10 +125,10 @@ def graph_tab(config, refresh):
                         id="query-input",
                         type="text",
                         list="examples",
-                        value="",
+                        # (as applied; see update_store())
+                        value=config.query or "",
                         style={"width": "100%", "display": "inline-block"},
                         placeholder="SELECT * FROM experiments WHERE",
-                        persistence=True,
                     ),
                     dbc.Switch(
                         id="switch-autorefresh",
@@ -245,16 +247,16 @@ def graph_tab(config, refresh):
                             dcc.Input(
                                 id=f"recolor-{color}",
                                 type="text",
+                                value=config.colors.get(color, [None, None])[0],
                                 placeholder=f"{color}",
                                 style={"width": "15%"},
-                                persistence=True,
                             ),
                             dcc.Input(
                                 id=f"recolor-{color}-label",
                                 type="text",
+                                value=config.colors.get(color, [None, None])[1],
                                 placeholder=f"{color}-label",
                                 style={"width": "15%", "margin-right": "10px", "margin-bottom": "10px"},
-                                persistence=True,
                             ),
                         ]
                     ],

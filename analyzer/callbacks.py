@@ -207,11 +207,13 @@ def register_callbacks(app):
 
     # callback for updating store
     @app.callback(
-        output=[
-            Output("config-store", "data"),
-            Output("database-dropdown", "value"),
-            *[Output(f"{axis}-dropdown", "value") for axis in AXES],
-        ],
+        output=dict(
+            store=Output("config-store", "data"),
+            database=Output("database-dropdown", "value"),
+            axes=[Output(f"{axis}-dropdown", "value") for axis in AXES],
+            applied=Output("applied-fields", "data"),
+            fields=[Output(field, "value") for field in TEXT_FIELDS],
+        ),
         inputs=dict(
             update=Input("update-button", "n_clicks"),
             database=Input("database-dropdown", "value"),
@@ -229,15 +231,35 @@ def register_callbacks(app):
             jitter=State("jitter-input", "value"),
             regexes=[State(f"recolor-{color}", "value") for color in COLORS],
             labels=[State(f"recolor-{color}-label", "value") for color in COLORS],
+            applied=State("applied-fields", "data"),
         ),
     )
     def update_store(update, database, axes, n_intervals, fixgreen, graph, directory, submits,
-                     query, store, jitter, regexes, labels):
+                     query, store, jitter, regexes, labels, applied):
         config = AnalyzerConfig.from_store(store)
+
+        def result(database=no_update, applied=no_update, fields=no_update):
+            if fields is no_update:
+                fields = [no_update] * len(TEXT_FIELDS)
+            return {"store": asdict(config), "database": database, "axes": [getattr(config, axis) for axis in AXES],
+                    "applied": applied, "fields": fields}
 
         directory = data_directory(directory)
         if directory is None:
             raise PreventUpdate
+
+        # a new page: the text fields as applied before (e.g. before a reload of the
+        # page), shown and applied; not when the graph tab is shown again (the text
+        # in them then is what was typed, maybe not applied)
+        restored = no_update
+        if not config.fields_restored:
+            config.fields_restored = True
+            applied = applied or {}
+            config.query = applied.get("query") or ""
+            config.jitter = applied.get("jitter") or 0
+            for color in COLORS:
+                config.colors[color] = list((applied.get("colors") or {}).get(color) or [None, None])
+            restored = text_fields(config)
 
         if ctx.triggered_id == "directory-input" and directory != config.directory:
             # another directory: its databases are listed by update_database_list(), start over
@@ -245,15 +267,19 @@ def register_callbacks(app):
             config.database = None
             config.dbkey = ""
             config.argv = ""
-            return asdict(config), None, *[getattr(config, axis) for axis in AXES]
+            return result(None, fields=restored)
 
         if database is None:
+            if restored is not no_update:
+                return result(fields=restored)
             raise PreventUpdate
 
         # check if database exists
         path = database_path(directory, database)
         if path is None:
             print("database does not exist")
+            if restored is not no_update:
+                return result(fields=restored)
             raise PreventUpdate
 
         # auto refresh: only re-render when the database file has changed
@@ -270,16 +296,19 @@ def register_callbacks(app):
         config.graph = graph
         config.argv = get_argv(path)
 
-        # the text fields only with Update or enter (or when the graph tab is
-        # shown): not e.g. a query that is still being typed at an auto refresh
-        triggered = ctx.triggered_id
-        if triggered is None or triggered == "update-button" or triggered in TEXT_FIELDS:
+        # the text fields only with Update or enter: not e.g. a query that is
+        # still being typed at an auto refresh. (When the graph tab is shown, all
+        # its inputs count as triggered: those of a real click or enter are > 0.)
+        applied = no_update
+        if any(t["value"] and t["prop_id"].split(".")[0] in ("update-button", *TEXT_FIELDS) for t in ctx.triggered):
             config.query = query
             config.jitter = jitter
             for color, regex, label in zip(COLORS, regexes, labels):
                 config.colors[color] = [regex, label]
+            # (kept by the browser)
+            applied = {"query": config.query, "jitter": config.jitter, "colors": config.colors}
 
-        return asdict(config), config.database, *[getattr(config, axis) for axis in AXES]
+        return result(config.database, applied, restored)
 
     # callback for printing the argv string at the bottom; also runs when the
     # information tab is opened (its input already exists, only the output is new)
@@ -333,6 +362,8 @@ def register_callbacks(app):
         regexes = [config.colors.get(color, [None, None])[0] for color in COLORS]
         labels = [config.colors.get(color, [None, None])[1] for color in COLORS]
 
+        if not config.database:
+            raise PreventUpdate
         axes = graph_axes(config.graph)
         missing = [axis for axis in axes if getattr(config, axis) is None]
         if missing:
@@ -648,6 +679,12 @@ def register_callbacks(app):
         note = f"the first {EXPORT_MAX_ROWS} of {count} rows" if count > EXPORT_MAX_ROWS else f"{count} rows"
         name = os.path.splitext(data["database"])[0] + "-query.csv"
         return dcc.send_data_frame(df.to_csv, name, index=False), note
+
+
+def text_fields(config):
+    """The values of the TEXT_FIELDS for ``config``."""
+    return ([config.query, config.jitter] + [config.colors[color][0] for color in COLORS]
+            + [config.colors[color][1] for color in COLORS])
 
 
 def query_grid(df):

@@ -16,7 +16,7 @@ With `Auto refresh` the graph is updated when the database changes (e.g., while 
 
 You can filter the database before it's fed into the graph engine by extending the query at the top.
 
-The query, jitter and recolor fields are applied with `Update` or by pressing enter in one of them.
+The query, jitter and recolor fields are applied with `Update` or by pressing enter in one of them. The browser remembers them as applied (e.g. after a reload of the page).
 
 Some examples include:
 
