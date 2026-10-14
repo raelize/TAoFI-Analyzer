@@ -232,6 +232,19 @@ def test_data_tab_auto_refresh(browser, tmp_path):
         next(url, None)
 
 
+def test_no_outside_requests(server, browser):
+    """Everything comes from the analyzer itself (e.g. no fonts from the internet: works offline)."""
+    page = browser.new_page()
+    outside = []
+    page.on("request", lambda r: not r.url.startswith(server) and not r.url.startswith("data:") and outside.append(r.url))
+    page.goto(server)
+    page.wait_for_function(GRAPH_READY, timeout=20000)
+    # the theme's font (used by the heading)
+    page.wait_for_function("[...document.fonts].some((f) => f.family.includes('News Cycle') && f.status === 'loaded')", timeout=10000)
+    page.close()
+    assert not outside
+
+
 def test_stale_page_reloads(page):
     page.wait_for_load_state("networkidle")
     page.evaluate("window.marker = 1")
