@@ -119,14 +119,17 @@ def build_scatter(dataset, x, y, colors, jitter, labels=None):
 
 
 def legend_labels(colors, regexes, labels):
-    """Legend label per color code: the recolor label (or regex) with its count and share."""
+    """Legend label per color code: the recolor label (or regex, or the color) with its count and share."""
     counts = count_colors(colors)
     total = len(colors)
 
     def share(count):
         return f"( {count} / {count / total if total else 0:.1%} )"
 
-    result = {code: f"{label or regex} {share(counts[code])}" for code, regex, label in zip(COLOR_CODES, regexes, labels)}
+    result = {
+        code: f"{label or regex or COLOR_MAP[code]} {share(counts[code])}"
+        for code, regex, label in zip(COLOR_CODES, regexes, labels)
+    }
     result["P"] = f"timeout {share(counts['P'])}"
     return result
 

@@ -191,7 +191,7 @@ def legend(response):
 def test_graph(client, store):
     code, response = graph(client, store)
     assert code == 200
-    assert legend(response) == ["None ( 3004 / 43.9% )", "None ( 3497 / 51.1% )", "None ( 298 / 4.4% )", "None ( 44 / 0.6% )"]
+    assert legend(response) == ["green ( 3004 / 43.9% )", "yellow ( 3497 / 51.1% )", "magenta ( 298 / 4.4% )", "red ( 44 / 0.6% )"]
 
 
 @pytest.mark.parametrize("graph_type", ["scatter", "scatter2", "simple"])
