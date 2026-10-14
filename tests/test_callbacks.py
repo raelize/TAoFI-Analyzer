@@ -225,6 +225,22 @@ def test_graph_without_its_axes(client, store, graph_type, axes, message):
     assert graph_message(response) == message
 
 
+def test_mega_graph(client, store):
+    code, response = graph(client, dict(store, graph="mega", x=None, y=None, colors={"red": ["^", "all"]}))
+    assert code == 200
+    traces = response["graph"]["figure"]["data"]
+    assert {trace["type"] for trace in traces} == {"splom"}
+    assert [d["label"] for d in traces[0]["dimensions"]] == ["delay", "length"]
+    assert legend(response)[-1] == "all ( 3839 / 56.1% )"
+
+
+def test_mega_graph_needs_two_parameters(client, tmp_path, make_database):
+    make_database("one.sqlite", columns="id integer, delay integer, color text, response blob", rows=[(1, 10, "G", b"x")])
+    store = dict(client.layout_store(), directory=str(tmp_path), database="one.sqlite", graph="mega")
+    code, response = graph(client, store)
+    assert graph_message(response) == "The mega graph needs at least two number columns besides id (delay)"
+
+
 def test_recolored_graph(client):
     _, response = select(client, client.layout_store(), recolor={"red": "^"})
     code, response = graph(client, response["config-store"]["data"])

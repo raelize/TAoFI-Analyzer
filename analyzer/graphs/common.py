@@ -34,6 +34,7 @@ RECOLOR_FLAGS = {
     "scatter": re.DOTALL,
     "scatter2": 0,
     "3d": re.DOTALL,
+    "mega": re.DOTALL,
 }
 
 

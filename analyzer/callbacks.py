@@ -34,8 +34,9 @@ def register_callbacks(app):
         function (relayout, store) {
             const triggered = dash_clientside.callback_context.triggered.map((t) => t.prop_id);
             const plot = document.querySelector("#graph .js-plotly-plot");
-            if (triggered.includes("config-store.data") || !plot || !plot.layout || !plot.layout.xaxis || plot.layout.scene) {
-                // another graph: nothing zoomed (yet)
+            const twoAxes = store && !["3d", "mega"].includes(store.graph);
+            if (triggered.includes("config-store.data") || !plot || !plot.layout || !twoAxes) {
+                // another graph: nothing zoomed (yet); or not a graph of x against y
                 return null;
             }
             const zoom = {};

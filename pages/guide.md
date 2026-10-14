@@ -30,6 +30,7 @@ The graph types:
 - `scatter2`: the same, in a fixed size (the recolor qualifiers don't match newlines with `.`)
 - `simple`: the experiments as classified by the glitch script (no recoloring)
 - `3d`: the x, y and z parameters against each other; drag to rotate, scroll to zoom
+- `mega`: every parameter (number column, except `id`) against every other one, one plot per pair; the axes aren't used
 
 At the bottom of the graph you can recolor the experiments fed into the graph engine.
 
