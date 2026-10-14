@@ -131,21 +131,14 @@ class Dataset:
 
     @staticmethod
     def color_setting(config):
-        """The parts of ``config`` that decide the colors: (regexes, fixgreen, flags) or None."""
-        flags = RECOLOR_FLAGS.get(config.graph)
-        if flags is None:
-            # graph type without recoloring (e.g. simple)
-            return None
+        """The parts of ``config`` that decide the colors: (regexes, fixgreen)."""
         regexes = tuple(config.colors.get(color, [None, None])[0] for color in COLORS)
-        return (regexes, bool(config.fixgreen), flags)
+        return (regexes, bool(config.fixgreen))
 
     def colors_for(self, config):
-        """Colors as shown by the graph for ``config`` (graph type, fixgreen and recolor fields)."""
-        setting = self.color_setting(config)
-        if setting is None:
-            return self.base_colors
-        regexes, fixgreen, flags = setting
-        return self.recolor(regexes, COLOR_CODES, fixgreen, flags)
+        """Colors as shown by the graph (and the data tab) for ``config``: fixgreen and the recolor fields."""
+        regexes, fixgreen = self.color_setting(config)
+        return self.recolor(regexes, COLOR_CODES, fixgreen, RECOLOR_FLAGS)
 
 
 def get_dataset(config):

@@ -1,6 +1,6 @@
 from dash.exceptions import PreventUpdate
 
-from analyzer.graphs.common import COLOR_CODES, RECOLOR_FLAGS, build_scatter, legend_labels, update_legend_labels
+from analyzer.graphs.common import build_scatter, legend_labels, update_legend_labels
 
 
 def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
@@ -8,7 +8,7 @@ def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     color_labels = color_states[8:]
 
     # recolor (vectorized: regexes run on the unique responses only)
-    colors = dataset.recolor(color_values, COLOR_CODES, fixgreen, RECOLOR_FLAGS["scatter"])
+    colors = dataset.colors_for(config)
     total_records = len(colors)
 
     try:

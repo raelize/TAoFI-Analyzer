@@ -29,14 +29,8 @@ COLOR_MAP = {
 }
 
 
-# Regex flags each graph type recolors with; graph types not listed don't recolor.
-# The data tab uses this too, so it shows the same colors as the graph.
-RECOLOR_FLAGS = {
-    "scatter": re.DOTALL,
-    "scatter2": 0,
-    "3d": re.DOTALL,
-    "mega": re.DOTALL,
-}
+# Regex flags of the recolor regexes: . also matches a newline.
+RECOLOR_FLAGS = re.DOTALL
 
 
 def give_xy_label(parameter):

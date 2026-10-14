@@ -87,7 +87,7 @@ def test_tabs_render(client, store, tab):
 
 
 def test_graph_tab_shows_the_store(client, store):
-    store = dict(store, x="id", y="delay", z="length", jitter=3, graph="scatter2", fixgreen=False)
+    store = dict(store, x="id", y="delay", z="length", jitter=3, graph="3d", fixgreen=False)
     code, response = client.call("tabs-content.children", {"tabs.value": "tab-graph", "config-store.data": store}, "tabs.value")
     values = {}
 
@@ -105,7 +105,7 @@ def test_graph_tab_shows_the_store(client, store):
     walk(response)
     assert values["database-dropdown"] == EXAMPLE_DATABASE
     assert (values["x-dropdown"], values["y-dropdown"], values["z-dropdown"], values["jitter-input"]) == ("id", "delay", "length", 3)
-    assert (values["graph-dropdown"], values["switch-fixgreen"]) == ("scatter2", False)
+    assert (values["graph-dropdown"], values["switch-fixgreen"]) == ("3d", False)
 
 
 def test_unknown_tab(client, store):
@@ -233,9 +233,9 @@ def test_graph(client, store):
     assert legend(response) == ["green ( 3004 / 43.9% )", "yellow ( 3497 / 51.1% )", "magenta ( 298 / 4.4% )", "red ( 44 / 0.6% )"]
 
 
-@pytest.mark.parametrize("graph_type", ["scatter", "scatter2", "simple"])
+@pytest.mark.parametrize("graph_type", ["scatter", "3d", "mega"])
 def test_graph_types(client, graph_type):
-    _, response = select(client, client.layout_store(), graph=graph_type)
+    _, response = select(client, client.layout_store(), graph=graph_type, z="id")
     code, response = graph(client, response["config-store"]["data"])
     assert code == 200
     assert len(response["graph"]["figure"]["data"]) == 4
@@ -258,7 +258,7 @@ def test_3d_graph(client):
     ("3d", {}, "Select the z axis to show the 3d graph"),
     ("3d", {"z": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
     ("scatter", {"y": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
-    ("simple", {"x": "a", "y": "b"}, f"{EXAMPLE_DATABASE} has no a, b columns"),
+    ("scatter", {"x": "a", "y": "b"}, f"{EXAMPLE_DATABASE} has no a, b columns"),
 ])
 def test_graph_without_its_axes(client, store, graph_type, axes, message):
     code, response = graph(client, dict(store, graph=graph_type, **axes))
@@ -296,7 +296,7 @@ def test_graph_keeps_its_zoom(client, store):
 
     assert revision(store) == revision(dict(store, query="delay > 1", jitter=5, dbkey="new"))
     assert revision(store) != revision(dict(store, y="id"))
-    assert revision(store) != revision(dict(store, graph="scatter2"))
+    assert revision(store) != revision(dict(store, graph="mega"))
 
 
 def click(client, store, curve, point):

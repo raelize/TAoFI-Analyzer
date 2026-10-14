@@ -80,16 +80,12 @@ def test_recolor_is_cached_and_read_only(config):
         dataset.base_colors[0] = "R"
 
 
-def test_colors_for_graph_types(config):
+def test_colors_for(config):
     dataset = get_dataset(config)
+    assert list(dataset.colors_for(config)) == list(dataset.base_colors)
+    # . also matches a newline
     config.colors["red"] = ["crash.dump", "crashed"]
-    # scatter recolors with DOTALL, scatter2 without; simple doesn't recolor
-    config.graph = "scatter"
     assert list(dataset.colors_for(config)) == ["G", "Y", "R", "M", "Y"]
-    config.graph = "scatter2"
-    assert list(dataset.colors_for(config)) == ["G", "Y", "Y", "M", "Y"]
-    config.graph = "simple"
-    assert dataset.colors_for(config) is dataset.base_colors
 
 
 def test_colors_for_fixgreen(config):

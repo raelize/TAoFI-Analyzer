@@ -1,6 +1,6 @@
 import plotly.graph_objects as go
 
-from analyzer.graphs.common import (COLOR_CODES, COLOR_MAP, RECOLOR_FLAGS, axis_values, color_traces,
+from analyzer.graphs.common import (COLOR_MAP, axis_values, color_traces,
                                     compact, legend_labels, message_figure, update_legend_labels)
 
 # columns that aren't parameters of the experiments
@@ -26,7 +26,7 @@ def mega_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     if len(columns) < 2:
         return message_figure(f"The mega graph needs at least two number columns besides id ({', '.join(columns) or 'none'})")
 
-    colors = dataset.recolor(color_values, COLOR_CODES, fixgreen, RECOLOR_FLAGS["mega"])
+    colors = dataset.colors_for(config)
     values = {column: axis_values(dataset, column, config.jitter) for column in columns}
 
     fig = go.Figure()

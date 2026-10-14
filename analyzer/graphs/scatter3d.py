@@ -1,6 +1,6 @@
 import plotly.graph_objects as go
 
-from analyzer.graphs.common import (COLOR_CODES, COLOR_MAP, RECOLOR_FLAGS, axis_values, color_traces,
+from analyzer.graphs.common import (COLOR_MAP, axis_values, color_traces,
                                     compact, legend_labels, update_legend_labels)
 
 
@@ -10,7 +10,7 @@ def scatter3d_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     color_labels = color_states[8:]
     z = config.z
 
-    colors = dataset.recolor(color_values, COLOR_CODES, fixgreen, RECOLOR_FLAGS["3d"])
+    colors = dataset.colors_for(config)
     xv, yv, zv = (axis_values(dataset, axis, config.jitter) for axis in (x, y, z))
 
     fig = go.Figure()
