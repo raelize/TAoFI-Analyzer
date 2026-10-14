@@ -768,6 +768,11 @@ def column_defs(table, wraptext, hidden):
         else:
             definition = {}
 
+        if column in table.numeric and table.squeezed and column != "amount":
+            # min(power) -> Min(Power) (AG Grid only capitalizes the first letter of a header)
+            function, name = column[:-1].split("(", 1)
+            definition["headerName"] = f"{function.capitalize()}({name[:1].upper()}{name[1:]})"
+
         definitions.append(
             {
                 "field": column,

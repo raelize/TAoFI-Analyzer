@@ -226,8 +226,8 @@ def grid_filter_mask(values, model):
 def build_table(dataset, colors, squeeze_records, response_s, response_e, rows=None):
     """Data tab table with the columns of the database (in database order).
 
-    Squeezed, numeric (int/float) columns become a "<column> >" (min) and
-    "<column> <" (max) pair; other columns show the value of the first experiment.
+    Squeezed, numeric (int/float) columns become a "min(<column>)" and
+    "max(<column>)" pair; other columns show the value of the first experiment.
     ``rows``: only these experiments (e.g. those selected in the graph).
     """
     df = dataset.df
@@ -271,9 +271,9 @@ def build_table(dataset, colors, squeeze_records, response_s, response_e, rows=N
     ranges = set()
     for column in columns:
         if numeric(column):
-            aggregations[f"{column} >"] = (column, "min")
-            aggregations[f"{column} <"] = (column, "max")
-            ranges |= {f"{column} >", f"{column} <"}
+            for function in ("min", "max"):
+                aggregations[f"{function}({column})"] = (column, function)
+                ranges.add(f"{function}({column})")
         else:
             aggregations[column] = (column, "first")
 

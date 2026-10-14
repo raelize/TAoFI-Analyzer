@@ -56,7 +56,7 @@ The data tab is synced with the graph configuration.
 
 The columns are the columns of the `experiments` table of the database.
 
-You can squeeze the data (i.e., combine experiment with the same responses) or not. Squeezed, every number column is shown as a pair: `<column> >` (the smallest value) and `<column> <` (the largest value); other columns show the value of the first experiment.
+You can squeeze the data (i.e., combine experiment with the same responses) or not. Squeezed, every number column is shown as a pair: `Min(<column>)` (the smallest value) and `Max(<column>)` (the largest value); other columns show the value of the first experiment.
 
 Every column can be sorted and filtered; number columns have number filters (e.g., greater than, in range).
 

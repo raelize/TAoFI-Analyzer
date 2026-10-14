@@ -534,12 +534,12 @@ def test_data(client, store):
 def test_data_squeezed(client, store):
     code, response = data(client, store, squeeze=True)
     grid = response["data"]["children"]["props"]
-    assert response["data-columns"]["options"][:3] == ["amount", "id >", "id <"]
-    rows = get_rows(client, store, grid["id"], squeeze=True, filters={"delay <": {"filterType": "number", "type": "greaterThan", "filter": 1990}},
+    assert response["data-columns"]["options"][:3] == ["amount", "min(id)", "max(id)"]
+    rows = get_rows(client, store, grid["id"], squeeze=True, filters={"max(delay)": {"filterType": "number", "type": "greaterThan", "filter": 1990}},
                     sort=[{"colId": "amount", "sort": "desc"}])
     amounts = [row["amount"] for row in rows["rowData"]]
     assert amounts == sorted(amounts, reverse=True)
-    assert all(row["delay <"] > 1990 for row in rows["rowData"])
+    assert all(row["max(delay)"] > 1990 for row in rows["rowData"])
 
 
 def test_data_is_colored_like_the_graph(client):
@@ -566,17 +566,17 @@ def test_empty_data(client):
 
 
 def test_show_and_hide_columns(client, store):
-    _, response = data(client, store, hidden=["hex(response)", "only-when-squeezed >"])
+    _, response = data(client, store, hidden=["hex(response)", "min(only-when-squeezed)"])
     grid = response["data"]["children"]["props"]
     shown = [c for c in response["data-columns"]["value"] if c not in ("delay", "rlen")] + ["hex(response)"]
     values = {"data-columns.value": shown, "data-columns.options": response["data-columns"]["options"],
-              "data-hidden-columns.data": ["hex(response)", "only-when-squeezed >"]}
+              "data-hidden-columns.data": ["hex(response)", "min(only-when-squeezed)"]}
     code, response = client.call("data-hidden-columns.data", values, "data-columns.value", ids={
         f"{GRIDS}.columnDefs": [(grid["id"], grid["columnDefs"])],
     })
     assert code == 200
     # hidden columns of the other (squeezed) table are kept
-    assert response["data-hidden-columns"]["data"] == ["delay", "only-when-squeezed >", "rlen"]
+    assert response["data-hidden-columns"]["data"] == ["delay", "min(only-when-squeezed)", "rlen"]
     defs = next(v for k, v in response.items() if "data-grid" in k)["columnDefs"]
     assert [d["field"] for d in defs if d["hide"]] == ["delay", "rlen"]
 
@@ -593,6 +593,13 @@ def test_column_defs():
     assert defs["hex(response)"]["cellStyle"] == {"font-family": "monospace"}
     wrapped = {d["field"]: d for d in column_defs(table, wraptext=True, hidden=set())}
     assert wrapped["response"]["wrapText"] and wrapped["hex(response)"]["wrapText"]
+    # squeezed: the smallest and largest value of number columns
+    squeezed = Table(pd.DataFrame({"amount": [2], "min(glitch_power)": [1], "max(glitch_power)": [5]}), [b"x"],
+                     squeezed=True, numeric={"amount", "min(glitch_power)", "max(glitch_power)"})
+    defs = {d["field"]: d for d in column_defs(squeezed, wraptext=False, hidden=set())}
+    assert defs["min(glitch_power)"]["headerName"] == "Min(Glitch_power)"
+    assert defs["max(glitch_power)"]["headerName"] == "Max(Glitch_power)"
+    assert "headerName" not in defs["amount"]
 
 
 #

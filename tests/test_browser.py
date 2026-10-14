@@ -224,11 +224,10 @@ def test_data_tab(page):
     # number filter through the grid itself (the data is squeezed by default)
     page.evaluate("""async () => {
         const api = await dash_ag_grid.getApiAsync(document.querySelector('[id*="data-grid"]').id);
-        api.setFilterModel({'delay >': {filterType: 'number', type: 'greaterThan', filter: 1900}});
+        api.setFilterModel({'min(delay)': {filterType: 'number', type: 'greaterThan', filter: 1900}});
     }""")
     page.wait_for_timeout(1500)
-    # AG Grid escapes the > in the column id attribute
-    cells = page.eval_on_selector_all('.ag-row [col-id="delay &gt;"]', "cells => cells.map(c => c.innerText)")
+    cells = page.eval_on_selector_all('.ag-row [col-id="min(delay)"]', "cells => cells.map(c => c.innerText)")
     values = [int(c) for c in cells if c.strip()]
     assert values and all(v > 1900 for v in values)
 

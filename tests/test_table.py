@@ -68,20 +68,20 @@ def test_slicing(dataset):
 
 def test_squeeze(dataset):
     table = build_table(dataset, dataset.base_colors, True, None, None)
-    assert table.columns == ["amount", "id >", "id <", "glitch_delay >", "glitch_delay <",
-                             "normal_voltage >", "normal_voltage <", "note", "extra",
-                             "sometimes >", "sometimes <", "color", "response", "rlen", "hex(response)"]
-    assert table.numeric == {"amount", "id >", "id <", "glitch_delay >", "glitch_delay <",
-                             "normal_voltage >", "normal_voltage <", "sometimes >", "sometimes <"}
+    assert table.columns == ["amount", "min(id)", "max(id)", "min(glitch_delay)", "max(glitch_delay)",
+                             "min(normal_voltage)", "max(normal_voltage)", "note", "extra",
+                             "min(sometimes)", "max(sometimes)", "color", "response", "rlen", "hex(response)"]
+    assert table.numeric == {"amount", "min(id)", "max(id)", "min(glitch_delay)", "max(glitch_delay)",
+                             "min(normal_voltage)", "max(normal_voltage)", "min(sometimes)", "max(sometimes)"}
     page, count = rows(table)
     assert count == 2
     ok, fail = page
     # most experiments first; numbers as min/max, other columns of the first experiment
     assert ok["amount"] == 3 and fail["amount"] == 1
-    assert (ok["id >"], ok["id <"]) == (1, 4)
-    assert (ok["glitch_delay >"], ok["glitch_delay <"]) == (10, 40)
-    assert (ok["normal_voltage >"], ok["normal_voltage <"]) == (1.0, 2.0)
-    assert (ok["sometimes >"], ok["sometimes <"]) == (2.0, 3.0)
+    assert (ok["min(id)"], ok["max(id)"]) == (1, 4)
+    assert (ok["min(glitch_delay)"], ok["max(glitch_delay)"]) == (10, 40)
+    assert (ok["min(normal_voltage)"], ok["max(normal_voltage)"]) == (1.0, 2.0)
+    assert (ok["min(sometimes)"], ok["max(sometimes)"]) == (2.0, 3.0)
     assert (ok["note"], ok["extra"], ok["color"]) == ("a", "00 ff", "G")
     assert (ok["response"], ok["rlen"], ok["hex(response)"]) == ("OK", 2, "4f 4b")
 
@@ -186,7 +186,7 @@ def test_response_filters_work_a_chunk_at_a_time(dataset, monkeypatch):
 
 def test_filtering_squeezed_min_max(dataset):
     table = build_table(dataset, dataset.base_colors, True, None, None)
-    page, count = rows(table, filters={"glitch_delay <": {"filterType": "number", "type": "greaterThanOrEqual", "filter": 40}})
+    page, count = rows(table, filters={"max(glitch_delay)": {"filterType": "number", "type": "greaterThanOrEqual", "filter": 40}})
     assert [row["response"] for row in page] == ["OK"]
 
 
