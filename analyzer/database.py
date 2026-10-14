@@ -23,7 +23,7 @@ _COUNTER = ThreadPoolExecutor(max_workers=2, thread_name_prefix="count")
 _COUNTING = set()  # paths being counted
 _COUNT_LOCK = threading.Lock()
 QUERY_TIMEOUT = 60  # seconds, for queries entered by the user
-LOAD_CHUNK = 10_000  # experiments read at a time (with the read lock released in between)
+LOAD_CHUNK = 10_000  # rowids read at a time (with the read lock released in between)
 MEMORY_RESERVE = 256 * 2**20  # bytes a database load leaves free (for the rest of the analyzer and the system)
 
 
@@ -308,12 +308,14 @@ def run_query(database_path, columns, where, limit):
 
 
 def load_experiments(database_path, query, after=0, responses=None):
-    """The experiments after rowid ``after`` matching ``query``: (DataFrame, last rowid).
+    """The experiments after rowid ``after`` matching ``query``: (DataFrame, the last rowid read).
 
-    Read LOAD_CHUNK experiments at a time, each chunk by its own statement:
+    Read a range of LOAD_CHUNK rowids at a time, each by its own statement:
     sqlite's read lock is released in between, so a glitch script writing to
-    the database (in rollback journal mode) only waits for one chunk instead of
-    the whole load (which would crash it once that takes longer than its timeout).
+    the database (in rollback journal mode) only waits for one short statement
+    instead of the whole load (which would crash it once that takes longer than
+    its timeout). A range, not "the next LOAD_CHUNK matching experiments": with
+    a query that matches few experiments that could read the whole file.
 
     ``responses``: the distinct responses so far (response -> response); new
     experiments share these, and new responses are added to it.
@@ -321,25 +323,29 @@ def load_experiments(database_path, query, after=0, responses=None):
     con = query_connection(database_path)
     # on its own line, so that a -- comment in the query doesn't hide the rest
     condition = f"AND (\n{query}\n)" if query else ""
-    sql = f"SELECT rowid, * FROM experiments WHERE rowid > ? {condition} ORDER BY rowid LIMIT {LOAD_CHUNK}"
+    sql = f"SELECT rowid, * FROM experiments WHERE rowid > ? AND rowid <= ? {condition} ORDER BY rowid"
 
     # one copy per distinct response: experiments mostly repeat a few
     # responses, so memory depends on the distinct ones, not on the rows
     if responses is None:
         responses = {}
     responses.setdefault(None, b"")
-    last = after
     try:
-        cursor = con.execute(sql, (last,))
-        # the first column is the rowid
-        columns = [d[0] for d in cursor.description][1:]
-        values = [[] for _ in columns]
-        response = columns.index("response") if "response" in columns else None
-        while rows := cursor.fetchall():
-            if rows[0][0] <= last:
-                # e.g. "1) OR (1": not one condition, it escaped "rowid > ?" (and would load forever)
+        # (experiments added while loading are loaded the next time)
+        last = max(con.execute("SELECT max(rowid) FROM experiments").fetchone()[0] or 0, after)
+        start, columns = after, None
+        while True:
+            end = min(start + LOAD_CHUNK, last)
+            cursor = con.execute(sql, (start, end))
+            if columns is None:
+                # the first column is the rowid
+                columns = [d[0] for d in cursor.description][1:]
+                values = [[] for _ in columns]
+                response = columns.index("response") if "response" in columns else None
+            rows = cursor.fetchall()
+            if rows and (rows[0][0] <= start or rows[-1][0] > end):
+                # e.g. "1) OR (1": not one condition, it escaped the range of rowids
                 raise ValueError("the query must be a condition on the experiments (e.g. delay > 100)")
-            last = rows[-1][0]
             for index, chunk in enumerate(list(zip(*rows))[1:]):
                 if index == response:
                     chunk = [responses.setdefault(r, r) for r in chunk]
@@ -349,11 +355,11 @@ def load_experiments(database_path, query, after=0, responses=None):
             if available is not None and available < MEMORY_RESERVE:
                 raise MemoryError(f"not enough memory: stopped after {len(values[0])} experiments "
                                   f"({available // 2**20} MB left); use a query to load fewer experiments")
-            if len(rows) < LOAD_CHUNK:
+            if end >= last:
                 break
+            start = end
             # a new deadline per chunk: QUERY_TIMEOUT is about a single (runaway) query
             set_deadline(con)
-            cursor = con.execute(sql, (last,))
     finally:
         con.close()
 

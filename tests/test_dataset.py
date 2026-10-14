@@ -179,8 +179,8 @@ def test_new_experiments_with_a_query(config, loads):
     assert list(get_dataset(config).df["id"]) == [6, 8]
     append(config, [(9, 90, 1, "G", b"d")])
     assert list(get_dataset(config).df["id"]) == [6, 8]
-    # (nothing matched at first, so the second load starts at the beginning as well)
-    assert loads == [0, 0, 8]
+    # (each time after the experiments read before)
+    assert loads == [0, 5, 8]
 
 
 def test_a_replaced_database_is_loaded_again(config, loads, tmp_path):

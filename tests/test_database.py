@@ -283,8 +283,9 @@ def test_load_experiments_in_chunks(tmp_path, make_database, monkeypatch):
     # the query is one condition (OR doesn't escape the rowid range), comments are fine
     df, last = load_experiments(path, "color = 'R' OR color = 'G' -- comment", 4)
     assert list(df["id"]) == [6, 7] and last == 7
+    # the last rowid read (not the last one matching): the next load starts after it
     df, last = load_experiments(path, "id > 100", 0)
-    assert len(df) == 0 and list(df.columns)[0] == "id" and last == 0
+    assert len(df) == 0 and list(df.columns)[0] == "id" and last == 7
 
 
 @pytest.mark.parametrize("query", ["1) OR (1", "color = 'R') OR (color = 'G'"])
@@ -297,6 +298,25 @@ def test_a_query_cannot_escape_the_chunks(tmp_path, make_database, monkeypatch, 
     monkeypatch.setattr(database, "LOAD_CHUNK", 10)
     with pytest.raises(ValueError, match="the query must be a condition"):
         load_experiments(str(tmp_path / "test.sqlite"), query, 5)
+
+
+def test_a_chunk_reads_a_range_of_rowids(tmp_path, make_database, monkeypatch):
+    """Also with a query that matches few experiments: a statement never reads more than LOAD_CHUNK of them."""
+    monkeypatch.setattr(database, "LOAD_CHUNK", 3)
+    make_database(rows=[(i, i, 3, "R" if i == 9 else "G", b"x") for i in range(1, 11)])
+    statements = []
+    connection = database.query_connection
+
+    def spy(path):
+        con = connection(path)
+        con.set_trace_callback(statements.append)
+        return con
+
+    monkeypatch.setattr(database, "query_connection", spy)
+    df, last = load_experiments(str(tmp_path / "test.sqlite"), "color = 'R'")
+    assert list(df["id"]) == [9] and last == 10
+    ranges = [s.split("rowid > ")[1].split(" AND (")[0] for s in statements if "rowid > " in s]
+    assert ranges == ["0 AND rowid <= 3", "3 AND rowid <= 6", "6 AND rowid <= 9", "9 AND rowid <= 10"]
 
 
 def test_writes_can_happen_while_loading(tmp_path, make_database, monkeypatch):
@@ -316,8 +336,10 @@ def test_writes_can_happen_while_loading(tmp_path, make_database, monkeypatch):
     df = load_dataframe(path, "")
     writer.close()
     assert len(writes) >= 3
-    # experiments written during the load are part of it (except the one after the last chunk)
-    assert len(df) == 7 + len(writes) - 1
+    # experiments written during the load are loaded the next time
+    assert len(df) == 7
+    monkeypatch.setattr(database, "available_memory", lambda: None)
+    assert len(load_experiments(path, "", 7)[0]) == len(writes)
 
 
 def test_available_memory():
