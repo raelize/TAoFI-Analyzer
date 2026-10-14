@@ -105,9 +105,10 @@ def test_open_database(experiments, directory, request_from, capsys):
     else:
         timings["generate"] = "(cached)"
 
-    config = AnalyzerConfig(directory=directory, database=database, x="delay", y="length")
-    regexes = [None] * len(COLORS)
-    regexes[0] = "^\\x00"  # a recolor regex, so that recoloring is part of the graph
+    config = AnalyzerConfig(directory=directory, database=database, x="delay", y="length", z="id", x2="id", y2="delay")
+    # a recolor regex, so that recoloring is part of the graph
+    config.colors["green"] = ["^\\x00", None]
+    regexes = [config.colors[color][0] for color in COLORS]
 
     with request_from("127.0.0.1"):
         # the database list
@@ -118,9 +119,13 @@ def test_open_database(experiments, directory, request_from, capsys):
         except DatasetError as e:
             pytest.skip(str(e))
         assert len(dataset.df) == experiments
-        figure = step("graph", lambda: GRAPHS[config.graph](config.x, config.y, config.fixgreen, dataset, config,
-                                                             COLORS, *regexes, *[None] * len(COLORS)))
-        step("graph json", lambda: plotly.io.to_json(figure))
+        # every graph type: drawn, and as sent to the browser
+        for graph in GRAPHS:
+            config.graph = graph
+            figure = step(graph, lambda: GRAPHS[graph](config.x, config.y, config.fixgreen, dataset, config,
+                                                       COLORS, *regexes, *[None] * len(COLORS)))
+            step(f"{graph} json", lambda: plotly.io.to_json(figure))
+        config.graph = "scatter"
         # the data tab: the table and its first page, squeezed (default) and not
         squeezed = step("data", lambda: get_table(dataset, config, True, None, None))
         step("data page", lambda: squeezed.page(0, 100, [], {}))
