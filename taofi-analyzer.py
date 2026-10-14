@@ -101,10 +101,8 @@ else:
         os.environ.get("ANALYZER_Y"),
     )
 
-    # generate the index page once now: this registers the component script
-    # bundles. With several gunicorn workers a worker may otherwise be asked
-    # for a bundle before it has served an index page, which fails with
-    # "dash is not a registered library" and leaves the browser with a blank app.
-    with app.server.test_request_context():
-        app._setup_server()
-        app.index()
+    # serve the index page once now: this registers the component script
+    # bundles. Otherwise a (restarted) worker may be asked for a bundle before
+    # it has served an index page, e.g. by a page that was already open, which
+    # fails with "dash is not a registered library" and leaves a blank app.
+    app.server.test_client().get("/")
