@@ -1,7 +1,15 @@
 import plotly.graph_objects as go
 
-from analyzer.graphs.common import (COLOR_MAP, axis_values, classification, color_traces, compact, legend_labels,
-                                    shown_points, update_legend_labels)
+from analyzer.graphs.common import (
+    COLOR_MAP,
+    axis_values,
+    classification,
+    color_traces,
+    compact,
+    legend_labels,
+    shown_points,
+    update_legend_labels,
+)
 
 
 def scatter3d_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):

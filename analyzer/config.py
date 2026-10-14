@@ -1,4 +1,5 @@
 """Configuration: the server side settings and what a browser tab shows (the config-store)."""
+
 from dataclasses import dataclass, field, fields
 
 # recolor targets, in the order of the recolor input fields

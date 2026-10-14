@@ -3,6 +3,7 @@
 Opt-in: uv sync --group browser && uv run pytest -m browser
 Uses the installed Chrome, or Playwright's Chromium (uv run playwright install chromium).
 """
+
 import os
 import shutil
 import sqlite3
@@ -33,9 +34,22 @@ def analyzer(directory, database):
     """Run the analyzer for ``directory`` (with ``database`` and the axes preselected); yields its URL."""
     port = free_port()
     process = subprocess.Popen(
-        [sys.executable, "taofi-analyzer.py", directory, "--port", str(port),
-         "--database", database, "--x", "delay", "--y", "length"],
-        cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        [
+            sys.executable,
+            "taofi-analyzer.py",
+            directory,
+            "--port",
+            str(port),
+            "--database",
+            database,
+            "--x",
+            "delay",
+            "--y",
+            "length",
+        ],
+        cwd=REPO,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
     )
     url = f"http://127.0.0.1:{port}/"
     for _ in range(100):
@@ -74,7 +88,10 @@ def page(server, browser):
     """A page with the graph of the example database; fails the test on browser errors."""
     page = browser.new_page(viewport={"width": 1600, "height": 1200})
     errors = []
-    page.on("console", lambda m: (m.type == "error" or (m.type == "warning" and "AG Grid" in m.text)) and errors.append(m.text))
+    page.on(
+        "console",
+        lambda m: (m.type == "error" or (m.type == "warning" and "AG Grid" in m.text)) and errors.append(m.text),
+    )
     page.on("response", lambda r: r.status >= 500 and errors.append(f"{r.status} {r.url}"))
     # (uncaught errors, e.g. of plotly drawing a graph, don't show up as console errors)
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -107,7 +124,9 @@ def test_information_tab(page):
     page.evaluate(f"Plotly.relayout({PLOT}, {{'yaxis.range[0]': 2000, 'yaxis.range[1]': 3000}})")
     page.wait_for_timeout(300)
     open_tab(page, "Information")
-    page.wait_for_function("document.querySelector('#argv') && document.querySelector('#argv').innerText.trim() !== ''", timeout=10000)
+    page.wait_for_function(
+        "document.querySelector('#argv') && document.querySelector('#argv').innerText.trim() !== ''", timeout=10000
+    )
     assert page.inner_text("#argv").strip() == EXAMPLE_ARGV
     assert page.inner_text("#points").splitlines() == ["delay: 1100 – 1500", "length: 2000 – 3000"]
     assert "database" in page.inner_text("#printstore")
@@ -151,7 +170,9 @@ def test_enter_applies_the_text_fields(page):
     # after a reload the fields are as they were applied, and applied
     page.fill("#query-input", "typed, not applied")
     page.reload()
-    page.wait_for_function(f"{GRAPH_READY} && {PLOT}.data.some((trace) => trace.name.startsWith('everything'))", timeout=20000)
+    page.wait_for_function(
+        f"{GRAPH_READY} && {PLOT}.data.some((trace) => trace.name.startsWith('everything'))", timeout=20000
+    )
     assert legend_title(page) != "Classification ( 6,843 ):"
     assert page.input_value("#query-input") == "delay > 1900"
     assert page.input_value("#recolor-red") == "^"
@@ -214,13 +235,18 @@ def test_selecting_in_the_graph(page):
     page.wait_for_timeout(500)
     open_tab(page, "Data")
     page.wait_for_selector(".ag-row", timeout=20000)
-    page.wait_for_function("document.querySelector('#data-selection').innerText.includes('selected in the graph')", timeout=10000)
+    page.wait_for_function(
+        "document.querySelector('#data-selection').innerText.includes('selected in the graph')", timeout=10000
+    )
     assert "(delay 1" in page.inner_text("#data-selection")
     page.wait_for_timeout(500)
     selected = grid_rows(page)
     page.click("#data-show-all")
     page.wait_for_function("!document.querySelector('#data-selection').innerText", timeout=10000)
-    page.wait_for_function(f"(() => {{ const grid = document.querySelector('[id*=\"data-grid\"]'); return dash_ag_grid.getApi(grid.id).getDisplayedRowCount() > {selected}; }})()", timeout=10000)
+    page.wait_for_function(
+        f"(() => {{ const grid = document.querySelector('[id*=\"data-grid\"]'); return dash_ag_grid.getApi(grid.id).getDisplayedRowCount() > {selected}; }})()",
+        timeout=10000,
+    )
 
 
 def choose(page, dropdown, value):
@@ -244,7 +270,9 @@ def test_mega_graph_parameters(page):
 def test_data_tab(page):
     open_tab(page, "Data")
     page.wait_for_selector(".ag-row", timeout=20000)
-    backgrounds = page.eval_on_selector_all(".ag-center-cols-container .ag-row", "rows => rows.map(r => getComputedStyle(r).backgroundColor)")
+    backgrounds = page.eval_on_selector_all(
+        ".ag-center-cols-container .ag-row", "rows => rows.map(r => getComputedStyle(r).backgroundColor)"
+    )
     assert any(b not in ("rgb(255, 255, 255)", "rgba(0, 0, 0, 0)") for b in backgrounds)
 
     # number filter through the grid itself (the data is squeezed by default)
@@ -294,7 +322,9 @@ def test_data_tab_auto_refresh(browser, tmp_path):
         })()"""
         before = page.evaluate(rows)
         con = sqlite3.connect(tmp_path / "live.sqlite")
-        con.executemany("INSERT INTO experiments VALUES (?, 1, 1, 'R', ?)", [(100000 + i, b"new %d" % i) for i in range(5)])
+        con.executemany(
+            "INSERT INTO experiments VALUES (?, 1, 1, 'R', ?)", [(100000 + i, b"new %d" % i) for i in range(5)]
+        )
         con.commit()
         con.close()
         # squeezed: 5 new responses
@@ -309,11 +339,15 @@ def test_no_outside_requests(server, browser):
     """Everything comes from the analyzer itself (e.g. no fonts from the internet: works offline)."""
     page = browser.new_page()
     outside = []
-    page.on("request", lambda r: not r.url.startswith(server) and not r.url.startswith("data:") and outside.append(r.url))
+    page.on(
+        "request", lambda r: not r.url.startswith(server) and not r.url.startswith("data:") and outside.append(r.url)
+    )
     page.goto(server)
     page.wait_for_function(GRAPH_READY, timeout=20000)
     # the theme's font (used by the heading)
-    page.wait_for_function("[...document.fonts].some((f) => f.family.includes('News Cycle') && f.status === 'loaded')", timeout=10000)
+    page.wait_for_function(
+        "[...document.fonts].some((f) => f.family.includes('News Cycle') && f.status === 'loaded')", timeout=10000
+    )
     page.close()
     assert not outside
 
@@ -326,7 +360,9 @@ def test_stale_page_reloads(page):
     page.wait_for_timeout(1500)
     assert page.evaluate("window.marker") == 1
     # the server's callbacks changed (e.g. updated and restarted): reload
-    page.route("**/_dash-dependencies", lambda route: route.fulfill(response=route.fetch(), body=route.fetch().text() + " "))
+    page.route(
+        "**/_dash-dependencies", lambda route: route.fulfill(response=route.fetch(), body=route.fetch().text() + " ")
+    )
     page.evaluate("window.dispatchEvent(new Event('focus'))")
     page.wait_for_function("window.marker === undefined", timeout=10000)
     page.unroute("**/_dash-dependencies")

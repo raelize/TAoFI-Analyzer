@@ -1,7 +1,17 @@
 import plotly.graph_objects as go
 
-from analyzer.graphs.common import (COLOR_MAP, axis_values, build_scatter, classification, color_traces, shown_points,
-                                    compact, legend_labels, message_figure, update_legend_labels)
+from analyzer.graphs.common import (
+    COLOR_MAP,
+    axis_values,
+    build_scatter,
+    classification,
+    color_traces,
+    shown_points,
+    compact,
+    legend_labels,
+    message_figure,
+    update_legend_labels,
+)
 
 # columns that aren't parameters of the experiments
 NOT_PARAMETERS = {"color", "response"}
@@ -29,7 +39,9 @@ def mega_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     columns = parameters(dataset, config.mega)
     if len(columns) < 2:
         if config.mega:
-            return message_figure(f"Select at least two number columns for the mega graph ({', '.join(columns) or 'none'})")
+            return message_figure(
+                f"Select at least two number columns for the mega graph ({', '.join(columns) or 'none'})"
+            )
         return message_figure(f"The mega graph needs at least two number columns ({', '.join(columns) or 'none'})")
 
     colors = dataset.colors_for(config)

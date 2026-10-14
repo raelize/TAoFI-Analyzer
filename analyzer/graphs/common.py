@@ -4,6 +4,7 @@ The analyzer hands the graph functions a ``Dataset`` (see analyzer/dataset.py)
 instead of a list of per-experiment dicts. Everything here works on numpy
 arrays so that a 500k-experiment database renders in well under a second.
 """
+
 import re
 import zlib
 
@@ -12,11 +13,16 @@ import pandas as pd
 import plotly.graph_objects as go
 
 AXIS_LABELS = {
-    "normal": "(v)", "normal_voltage": "(v)",
-    "length": "(ns)", "glitch_length": "(ns)",
-    "delay": "(ns)", "glitch_delay": "(ns)",
-    "power": "(%)", "glitch_power": "(%)",
-    "voltage": "(v)", "glitch_voltage": "(v)",
+    "normal": "(v)",
+    "normal_voltage": "(v)",
+    "length": "(ns)",
+    "glitch_length": "(ns)",
+    "delay": "(ns)",
+    "glitch_delay": "(ns)",
+    "power": "(%)",
+    "glitch_power": "(%)",
+    "voltage": "(v)",
+    "glitch_voltage": "(v)",
 }
 
 # Recolor targets, in the order of the recolor input fields (green .. red).
@@ -24,8 +30,15 @@ COLOR_CODES = ["G", "Y", "M", "O", "C", "B", "Z", "R"]
 # Legend/trace order (timeout first, as before).
 COLOR_ORDER = ["P"] + COLOR_CODES
 COLOR_MAP = {
-    "P": "pink", "G": "green", "Y": "yellow", "M": "magenta",
-    "O": "orange", "C": "cyan", "B": "blue", "Z": "black", "R": "red",
+    "P": "pink",
+    "G": "green",
+    "Y": "yellow",
+    "M": "magenta",
+    "O": "orange",
+    "C": "cyan",
+    "B": "blue",
+    "Z": "black",
+    "R": "red",
 }
 
 
@@ -170,7 +183,7 @@ def plotted_at(dataset, row, columns, jitter, clicked):
         if coordinate not in clicked or column not in dataset.df.columns:
             continue
         # (as sent to the browser: compact() makes floats float32)
-        value = compact(axis_values(dataset, column, jitter)[row:row + 1])[0]
+        value = compact(axis_values(dataset, column, jitter)[row : row + 1])[0]
         try:
             if not np.isclose(float(value), float(clicked[coordinate]), rtol=1e-6, atol=0):
                 return False
@@ -234,8 +247,9 @@ def legend_labels(colors, regexes, labels):
 def message_figure(message):
     """An empty graph showing ``message`` (e.g. why the database can't be shown)."""
     fig = go.Figure()
-    fig.add_annotation(text=message, showarrow=False, font={"size": 16, "color": "#c0392b"},
-                       xref="paper", yref="paper", x=0.5, y=0.5)
+    fig.add_annotation(
+        text=message, showarrow=False, font={"size": 16, "color": "#c0392b"}, xref="paper", yref="paper", x=0.5, y=0.5
+    )
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
     return fig

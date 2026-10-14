@@ -18,8 +18,15 @@ def config(tmp_path, make_database, request_from):
 
 
 def selection(config, **outline):
-    return {"directory": config.directory, "database": config.database, "query": config.query, "jitter": config.jitter,
-            "x": "delay", "y": "length", **outline}
+    return {
+        "directory": config.directory,
+        "database": config.database,
+        "query": config.query,
+        "jitter": config.jitter,
+        "x": "delay",
+        "y": "length",
+        **outline,
+    }
 
 
 def test_box(config):
@@ -29,7 +36,9 @@ def test_box(config):
 
 def test_lasso(config):
     # a triangle around (0, 0), (4, 0) and (0, 4)
-    rows = selected_rows(get_dataset(config), config, selection(config, lasso={"x": [-0.5, 4.6, -0.5], "y": [-0.5, -0.5, 4.6]}))
+    rows = selected_rows(
+        get_dataset(config), config, selection(config, lasso={"x": [-0.5, 4.6, -0.5], "y": [-0.5, -0.5, 4.6]})
+    )
     dataset = get_dataset(config)
     points = set(zip(dataset.df["delay"][rows], dataset.df["length"][rows]))
     assert points == {(x, y) for x in range(5) for y in range(5) if x + y <= 4}
@@ -44,6 +53,7 @@ def test_with_jitter(config):
     # selected at the positions they were plotted at
     config.jitter = 0.3
     from analyzer.graphs.common import axis_values
+
     dataset = get_dataset(config)
     x = axis_values(dataset, "delay", 0.3)
     rows = selected_rows(dataset, config, selection(config, box={"x": [-1, 3.5], "y": [-1, 100]}))
@@ -52,7 +62,10 @@ def test_with_jitter(config):
 
 @pytest.mark.parametrize("other", [{"query": "delay > 1"}, {"jitter": 2}, {"database": "other.sqlite"}, {"x": "nope"}])
 def test_selections_of_another_graph_dont_apply(config, other):
-    assert selected_rows(get_dataset(config), config, {**selection(config, box={"x": [0, 1], "y": [0, 1]}), **other}) is None
+    assert (
+        selected_rows(get_dataset(config), config, {**selection(config, box={"x": [0, 1], "y": [0, 1]}), **other})
+        is None
+    )
     assert selected_rows(get_dataset(config), config, None) is None
 
 
@@ -68,7 +81,11 @@ def test_table_of_a_selection(config):
 
 
 def test_describe():
-    assert describe({"x": "delay", "y": "length", "box": {"x": [3, 1], "y": [0, 2.5]}}, 7) == \
-        "the 7 experiments selected in the graph (delay 1–3, length 0–2.5)"
-    assert describe({"x": "delay", "y": "length", "lasso": {"x": [], "y": []}}, 1) == \
-        "the 1 experiments selected in the graph (a lasso on delay and length)"
+    assert (
+        describe({"x": "delay", "y": "length", "box": {"x": [3, 1], "y": [0, 2.5]}}, 7)
+        == "the 7 experiments selected in the graph (delay 1–3, length 0–2.5)"
+    )
+    assert (
+        describe({"x": "delay", "y": "length", "lasso": {"x": [], "y": []}}, 1)
+        == "the 1 experiments selected in the graph (a lasso on delay and length)"
+    )

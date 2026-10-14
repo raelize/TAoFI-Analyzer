@@ -1,4 +1,5 @@
 """Timing badge in the header: how long the last content update took."""
+
 import time
 from functools import wraps
 

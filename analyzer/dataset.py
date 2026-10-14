@@ -1,4 +1,5 @@
 """The experiments of a database (filtered by the query) and their colors."""
+
 import gc
 import re
 import threading
@@ -9,9 +10,17 @@ import pandas as pd
 from dash.exceptions import PreventUpdate
 
 from analyzer.config import COLORS
-from analyzer.database import (REQUIRED_COLUMNS, appended_to, database_path, file_key, load_experiments, max_rowid,
-                               query_error)
+from analyzer.database import (
+    REQUIRED_COLUMNS,
+    appended_to,
+    database_path,
+    file_key,
+    load_experiments,
+    max_rowid,
+    query_error,
+)
 from analyzer.graphs.common import COLOR_CODES, RECOLOR_FLAGS
+
 
 class DatasetError(PreventUpdate):
     """A database that can't be shown (bad query, not enough memory, ...); the message is for the user."""

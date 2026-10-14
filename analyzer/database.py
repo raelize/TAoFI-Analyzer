@@ -1,4 +1,5 @@
 """Database access: which files may be read, read-only connections and queries."""
+
 import os
 import re
 import sqlite3
@@ -129,7 +130,9 @@ def count_rows(connection, after, last):
     count = 0
     while after < last:
         end = min(after + COUNT_CHUNK, last)
-        count += connection.execute("SELECT count(*) FROM experiments WHERE rowid > ? AND rowid <= ?", (after, end)).fetchone()[0]
+        count += connection.execute(
+            "SELECT count(*) FROM experiments WHERE rowid > ? AND rowid <= ?", (after, end)
+        ).fetchone()[0]
         after = end
     return count
 
@@ -336,8 +339,10 @@ def run_query(database_path, columns, where, limit):
             df = pd.read_sql(f"SELECT * FROM ({query}) LIMIT {int(limit)}", con)
         except Exception as e:
             if live and interrupted(e):
-                raise TimeoutError(f"the query took longer than {seconds} s: stopped, because a glitch script is "
-                                   "writing to the database (it can't while the query runs, and gives up after 5 s)") from e
+                raise TimeoutError(
+                    f"the query took longer than {seconds} s: stopped, because a glitch script is "
+                    "writing to the database (it can't while the query runs, and gives up after 5 s)"
+                ) from e
             raise
         # (fewer rows than asked for: that's all of them)
         count = len(df)
@@ -401,8 +406,10 @@ def load_experiments(database_path, query, after=0, responses=None):
             # stop before the system runs out of memory (and kills the analyzer)
             available = available_memory()
             if available is not None and available < MEMORY_RESERVE:
-                raise MemoryError(f"not enough memory: stopped after {len(values[0])} experiments "
-                                  f"({available // 2**20} MB left); use a query to load fewer experiments")
+                raise MemoryError(
+                    f"not enough memory: stopped after {len(values[0])} experiments "
+                    f"({available // 2**20} MB left); use a query to load fewer experiments"
+                )
             if end >= last:
                 break
             start = end

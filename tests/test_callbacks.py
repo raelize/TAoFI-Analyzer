@@ -1,4 +1,5 @@
 """The callbacks, called through Dash's HTTP endpoint like the browser does."""
+
 import os
 import sqlite3
 
@@ -33,14 +34,33 @@ def select(client, store, trigger="update-button.n_clicks", **fields):
     return client.call("config-store.data", values, trigger)
 
 
-def select_values(store, database=EXAMPLE_DATABASE, directory=None, query="", graph="scatter", fixgreen=True,
-                  x="delay", y="length", z=None, mega=None, recolor=None):
+def select_values(
+    store,
+    database=EXAMPLE_DATABASE,
+    directory=None,
+    query="",
+    graph="scatter",
+    fixgreen=True,
+    x="delay",
+    y="length",
+    z=None,
+    mega=None,
+    recolor=None,
+):
     values = {
-        "update-button.n_clicks": 1, "database-dropdown.value": database, "x-dropdown.value": x, "y-dropdown.value": y,
-        "z-dropdown.value": z, "mega-dropdown.value": mega,
-        "refresh-timer.n_intervals": None, "switch-fixgreen.value": fixgreen, "graph-dropdown.value": graph,
-        "directory-input.value": directory or store["directory"], "query-input.value": query,
-        "config-store.data": store, "jitter-input.value": 0,
+        "update-button.n_clicks": 1,
+        "database-dropdown.value": database,
+        "x-dropdown.value": x,
+        "y-dropdown.value": y,
+        "z-dropdown.value": z,
+        "mega-dropdown.value": mega,
+        "refresh-timer.n_intervals": None,
+        "switch-fixgreen.value": fixgreen,
+        "graph-dropdown.value": graph,
+        "directory-input.value": directory or store["directory"],
+        "query-input.value": query,
+        "config-store.data": store,
+        "jitter-input.value": 0,
     }
     for color in COLORS:
         values[f"recolor-{color}.value"] = (recolor or {}).get(color)
@@ -61,25 +81,45 @@ def graph(client, store, hover=True):
 
 def data(client, store, squeeze=False, hidden=(), wraptext=False, selection=None, trigger="tabs.value"):
     values = {
-        "switch-squeezedata.value": squeeze, "switch-wraptext.value": wraptext, "response_s.value": None,
-        "response_e.value": None, "tabs.value": "tab-data", "config-store.data": store, "data-hidden-columns.data": list(hidden),
-        "selection-store.data": selection, "data-show-all.n_clicks": 1 if trigger == "data-show-all.n_clicks" else 0,
+        "switch-squeezedata.value": squeeze,
+        "switch-wraptext.value": wraptext,
+        "response_s.value": None,
+        "response_e.value": None,
+        "tabs.value": "tab-data",
+        "config-store.data": store,
+        "data-hidden-columns.data": list(hidden),
+        "selection-store.data": selection,
+        "data-show-all.n_clicks": 1 if trigger == "data-show-all.n_clicks" else 0,
     }
     return client.call("data.children", values, trigger)
 
 
 def get_rows(client, store, grid_id, squeeze=False, start=0, end=100, sort=(), filters=None):
     request = {"startRow": start, "endRow": end, "sortModel": list(sort), "filterModel": filters or {}}
-    values = {"config-store.data": store, "switch-squeezedata.value": squeeze, "response_s.value": None, "response_e.value": None}
-    code, response = client.call("getRowsResponse", values, "grid.getRowsRequest",
-                                 ids={f"{GRID}.getRowsRequest": (grid_id, request), f"{GRID}.getRowsResponse": grid_id})
+    values = {
+        "config-store.data": store,
+        "switch-squeezedata.value": squeeze,
+        "response_s.value": None,
+        "response_e.value": None,
+    }
+    code, response = client.call(
+        "getRowsResponse",
+        values,
+        "grid.getRowsRequest",
+        ids={f"{GRID}.getRowsRequest": (grid_id, request), f"{GRID}.getRowsResponse": grid_id},
+    )
     assert code == 200
     return next(iter(response.values()))["getRowsResponse"]
 
 
 def query(client, store, select_columns="count(*)", where=""):
     """The result of a query of the database tab: an error, or (note, columns, rows)."""
-    values = {"query-button.n_clicks": 1, "select-input.value": select_columns, "where-input.value": where, "config-store.data": store}
+    values = {
+        "query-button.n_clicks": 1,
+        "select-input.value": select_columns,
+        "where-input.value": where,
+        "config-store.data": store,
+    }
     code, response = client.call("query-output.children", values, "query-button.n_clicks")
     assert code == 200
     output = response["query-output"]["children"]
@@ -103,7 +143,9 @@ def test_tabs_render(client, store, tab):
 
 def test_graph_tab_shows_the_store(client, store):
     store = dict(store, x="id", y="delay", z="length", jitter=3, graph="3d", fixgreen=False)
-    code, response = client.call("tabs-content.children", {"tabs.value": "tab-graph", "config-store.data": store}, "tabs.value")
+    code, response = client.call(
+        "tabs-content.children", {"tabs.value": "tab-graph", "config-store.data": store}, "tabs.value"
+    )
     values = {}
 
     def walk(node):
@@ -119,7 +161,12 @@ def test_graph_tab_shows_the_store(client, store):
 
     walk(response)
     assert values["database-dropdown"] == EXAMPLE_DATABASE
-    assert (values["x-dropdown"], values["y-dropdown"], values["z-dropdown"], values["jitter-input"]) == ("id", "delay", "length", 3)
+    assert (values["x-dropdown"], values["y-dropdown"], values["z-dropdown"], values["jitter-input"]) == (
+        "id",
+        "delay",
+        "length",
+        3,
+    )
     assert (values["graph-dropdown"], values["switch-fixgreen"]) == ("3d", False)
 
 
@@ -141,43 +188,68 @@ def test_select_database(store):
 
 
 def test_database_list(client, tmp_path):
-    code, response = client.call("database-dropdown.options", {"directory-input.value": EXAMPLE_DIRECTORY}, "directory-input.value")
-    assert response["database-dropdown"]["options"] == [{"label": f"{EXAMPLE_DATABASE} ({EXAMPLE_EXPERIMENTS})", "value": EXAMPLE_DATABASE}]
+    code, response = client.call(
+        "database-dropdown.options", {"directory-input.value": EXAMPLE_DIRECTORY}, "directory-input.value"
+    )
+    assert response["database-dropdown"]["options"] == [
+        {"label": f"{EXAMPLE_DATABASE} ({EXAMPLE_EXPERIMENTS})", "value": EXAMPLE_DATABASE}
+    ]
     assert response["directory-input"]["invalid"] is False
-    code, response = client.call("database-dropdown.options", {"directory-input.value": str(tmp_path / "missing")}, "directory-input.value")
-    assert response == {"database-dropdown": {"options": []}, "directory-input": {"invalid": True}, "count-timer": {"disabled": True}}
+    code, response = client.call(
+        "database-dropdown.options", {"directory-input.value": str(tmp_path / "missing")}, "directory-input.value"
+    )
+    assert response == {
+        "database-dropdown": {"options": []},
+        "directory-input": {"invalid": True},
+        "count-timer": {"disabled": True},
+    }
 
 
 def test_database_list_while_counting(client, tmp_path, make_database, monkeypatch):
     make_database()
     monkeypatch.setattr("analyzer.callbacks.counting", lambda: True)
-    code, response = client.call("database-dropdown.options", {"directory-input.value": str(tmp_path)}, "directory-input.value")
+    code, response = client.call(
+        "database-dropdown.options", {"directory-input.value": str(tmp_path)}, "directory-input.value"
+    )
     # checked again every second until all are counted
     assert response["count-timer"]["disabled"] is False
 
 
 def test_axis_lists(client, store):
-    code, response = client.call("x-dropdown.options", {"database-dropdown.value": EXAMPLE_DATABASE, "config-store.data": store}, "database-dropdown.value")
+    code, response = client.call(
+        "x-dropdown.options",
+        {"database-dropdown.value": EXAMPLE_DATABASE, "config-store.data": store},
+        "database-dropdown.value",
+    )
     assert response["x-dropdown"]["options"] == response["y-dropdown"]["options"] == ["id", "delay", "length", "color"]
     for axis in ("z", "x2", "y2", "mega"):
         assert response[f"{axis}-dropdown"]["options"] == ["id", "delay", "length", "color"]
 
 
-@pytest.mark.parametrize("graph_type, shown", [
-    ("scatter", ["x", "y"]),
-    ("scatter2", ["x", "y", "x2", "y2"]),
-    ("3d", ["x", "y", "z"]),
-    ("mega", ["mega"]),
-])
+@pytest.mark.parametrize(
+    "graph_type, shown",
+    [
+        ("scatter", ["x", "y"]),
+        ("scatter2", ["x", "y", "x2", "y2"]),
+        ("3d", ["x", "y", "z"]),
+        ("mega", ["mega"]),
+    ],
+)
 def test_only_the_axes_of_the_graph_type_are_shown(client, graph_type, shown):
     code, response = client.call("x-dropdown.style", {"graph-dropdown.value": graph_type}, "graph-dropdown.value")
-    visible = [axis for axis in ("x", "y", "z", "x2", "y2", "mega") if response[f"{axis}-dropdown"]["style"] != {"display": "none"}]
+    visible = [
+        axis
+        for axis in ("x", "y", "z", "x2", "y2", "mega")
+        if response[f"{axis}-dropdown"]["style"] != {"display": "none"}
+    ]
     assert visible == shown
 
 
 def test_switch_directory(client, store, tmp_path, make_database):
     make_database("other.sqlite")
-    code, response = select(client, store, database=EXAMPLE_DATABASE, directory=str(tmp_path), trigger="directory-input.value")
+    code, response = select(
+        client, store, database=EXAMPLE_DATABASE, directory=str(tmp_path), trigger="directory-input.value"
+    )
     assert code == 200
     switched = response["config-store"]["data"]
     assert switched["directory"] == str(tmp_path)
@@ -194,7 +266,9 @@ def test_remote_users_cant_switch_directory(remote, tmp_path, make_database):
     store = dict(remote.layout_store(), fields_restored=True)
     code, _ = select(remote, store, database=None, directory=str(tmp_path), trigger="directory-input.value")
     assert code == 204
-    code, response = remote.call("database-dropdown.options", {"directory-input.value": str(tmp_path)}, "directory-input.value")
+    code, response = remote.call(
+        "database-dropdown.options", {"directory-input.value": str(tmp_path)}, "directory-input.value"
+    )
     assert [o["value"] for o in response["database-dropdown"]["options"]] == [EXAMPLE_DATABASE]
     # a store pointing elsewhere is ignored
     code, _ = select(remote, dict(store, directory=str(tmp_path)), database="other.sqlite", directory=str(tmp_path))
@@ -203,37 +277,65 @@ def test_remote_users_cant_switch_directory(remote, tmp_path, make_database):
 
 def test_auto_refresh_only_when_the_database_changed(client, tmp_path, make_database):
     make_database(rows=[(1, 1, 1, "G", b"x")])
-    _, response = select(client, client.layout_store(), database=None, directory=str(tmp_path), trigger="directory-input.value")
+    _, response = select(
+        client, client.layout_store(), database=None, directory=str(tmp_path), trigger="directory-input.value"
+    )
     _, response = select(client, response["config-store"]["data"], database="test.sqlite", directory=str(tmp_path))
     store = response["config-store"]["data"]
-    code, _ = select(client, store, database="test.sqlite", directory=str(tmp_path), trigger="refresh-timer.n_intervals")
+    code, _ = select(
+        client, store, database="test.sqlite", directory=str(tmp_path), trigger="refresh-timer.n_intervals"
+    )
     assert code == 204
     con = sqlite3.connect(tmp_path / "test.sqlite")
     con.execute("INSERT INTO experiments VALUES (2, 2, 2, 'R', x'00')")
     con.commit()
     con.close()
-    code, _ = select(client, store, database="test.sqlite", directory=str(tmp_path), trigger="refresh-timer.n_intervals")
+    code, _ = select(
+        client, store, database="test.sqlite", directory=str(tmp_path), trigger="refresh-timer.n_intervals"
+    )
     assert code == 200
 
 
 def test_auto_refresh_keeps_the_applied_text_fields(client, tmp_path, make_database):
     """A query (or recolor regex) that is still being typed isn't applied by an auto refresh."""
     make_database(rows=[(1, 1, 1, "G", b"x")])
-    _, response = select(client, client.layout_store(), database=None, directory=str(tmp_path), trigger="directory-input.value")
-    _, response = select(client, response["config-store"]["data"], database="test.sqlite", directory=str(tmp_path),
-                         query="delay > 0", recolor={"red": "x"})
+    _, response = select(
+        client, client.layout_store(), database=None, directory=str(tmp_path), trigger="directory-input.value"
+    )
+    _, response = select(
+        client,
+        response["config-store"]["data"],
+        database="test.sqlite",
+        directory=str(tmp_path),
+        query="delay > 0",
+        recolor={"red": "x"},
+    )
     store = response["config-store"]["data"]
     append(tmp_path / "test.sqlite")
-    _, response = select(client, store, database="test.sqlite", directory=str(tmp_path), trigger="refresh-timer.n_intervals",
-                         query="delay > ", recolor={"red": "("})
+    _, response = select(
+        client,
+        store,
+        database="test.sqlite",
+        directory=str(tmp_path),
+        trigger="refresh-timer.n_intervals",
+        query="delay > ",
+        recolor={"red": "("},
+    )
     refreshed = response["config-store"]["data"]
     assert refreshed["dbkey"] != store["dbkey"]
     assert (refreshed["query"], refreshed["colors"]["red"][0]) == ("delay > 0", "x")
 
 
 def test_data_of_a_selection(client, store):
-    selection = {"directory": store["directory"], "database": store["database"], "query": store["query"], "jitter": store["jitter"],
-                 "x": "delay", "y": "length", "box": {"x": [1000, 1100], "y": [1000, 2000]}}
+    selection = {
+        "directory": store["directory"],
+        "database": store["database"],
+        "query": store["query"],
+        "jitter": store["jitter"],
+        "x": "delay",
+        "y": "length",
+        "box": {"x": [1000, 1100], "y": [1000, 2000]},
+    }
     code, response = data(client, store, selection=selection)
     note = response["data-selection"]["children"]
     assert note.startswith("Showing the ") and "selected in the graph (delay 1000–1100, length 1000–2000)" in note
@@ -264,15 +366,18 @@ def test_data_tab_auto_refresh(client, tmp_path, make_database):
     assert code == 200 and response["data-dbkey"]["data"] != shown
 
 
-@pytest.mark.parametrize("trigger, applied", [
-    ("update-button.n_clicks", True),
-    ("query-input.n_submit", True),
-    ("recolor-red.n_submit", True),
-    ("jitter-input.n_submit", True),
-    (None, False),  # the graph tab is shown again (the fields may contain text that wasn't applied)
-    ("x-dropdown.value", False),
-    ("graph-dropdown.value", False),
-])
+@pytest.mark.parametrize(
+    "trigger, applied",
+    [
+        ("update-button.n_clicks", True),
+        ("query-input.n_submit", True),
+        ("recolor-red.n_submit", True),
+        ("jitter-input.n_submit", True),
+        (None, False),  # the graph tab is shown again (the fields may contain text that wasn't applied)
+        ("x-dropdown.value", False),
+        ("graph-dropdown.value", False),
+    ],
+)
 def test_text_fields_are_applied_with_update_or_enter(client, store, trigger, applied):
     _, response = select(client, store, trigger=trigger, x="id", query="delay > 1", recolor={"red": "x"})
     new = response["config-store"]["data"]
@@ -295,7 +400,9 @@ def test_max_points_field(client, store):
     assert response["config-store"]["data"]["max_points"] == 5000
     assert response["applied-fields"]["data"]["max_points"] == 5000
     # empty: the default
-    code, response = client.call("config-store.data", {**select_values(store), "max-points-input.value": None}, "update-button.n_clicks")
+    code, response = client.call(
+        "config-store.data", {**select_values(store), "max-points-input.value": None}, "update-button.n_clicks"
+    )
     assert response["config-store"]["data"]["max_points"] is None
 
 
@@ -310,12 +417,22 @@ def test_the_applied_text_fields_are_restored_on_a_new_page(client):
     """E.g. after a reload: the text fields as applied before (kept by the browser), not as typed."""
     applied = {"query": "delay > 1", "jitter": 2, "max_points": 1000, "colors": {"red": ["crash", "crashed"]}}
     values = {"applied-fields.data": applied}
-    code, response = client.call("config-store.data", {**select_values(client.layout_store(), query="typed"), **values}, None)
+    code, response = client.call(
+        "config-store.data", {**select_values(client.layout_store(), query="typed"), **values}, None
+    )
     store = response["config-store"]["data"]
-    assert (store["query"], store["jitter"], store["colors"]["red"], store["fields_restored"]) == ("delay > 1", 2, ["crash", "crashed"], True)
+    assert (store["query"], store["jitter"], store["colors"]["red"], store["fields_restored"]) == (
+        "delay > 1",
+        2,
+        ["crash", "crashed"],
+        True,
+    )
     assert store["max_points"] == response["max-points-input"]["value"] == 1000
-    assert (response["query-input"]["value"], response["recolor-red"]["value"], response["recolor-red-label"]["value"]) == \
-        ("delay > 1", "crash", "crashed")
+    assert (
+        response["query-input"]["value"],
+        response["recolor-red"]["value"],
+        response["recolor-red-label"]["value"],
+    ) == ("delay > 1", "crash", "crashed")
     # applying them: kept by the browser
     _, response = select(client, store, query="delay > 5", recolor={"red": "x"})
     assert response["applied-fields"]["data"]["query"] == "delay > 5"
@@ -341,7 +458,12 @@ def legend(response):
 def test_graph(client, store):
     code, response = graph(client, store)
     assert code == 200
-    assert legend(response) == ["green ( 3004 / 43.9% )", "yellow ( 3497 / 51.1% )", "magenta ( 298 / 4.4% )", "red ( 44 / 0.6% )"]
+    assert legend(response) == [
+        "green ( 3004 / 43.9% )",
+        "yellow ( 3497 / 51.1% )",
+        "magenta ( 298 / 4.4% )",
+        "red ( 44 / 0.6% )",
+    ]
 
 
 @pytest.mark.parametrize("graph_type", ["scatter", "3d", "mega"])
@@ -364,13 +486,16 @@ def test_3d_graph(client):
     assert figure["layout"]["scene"]["zaxis"]["title"]["text"] == "id"
 
 
-@pytest.mark.parametrize("graph_type, axes, message", [
-    ("scatter", {"x": None}, "Select the x-axis to show the scatter graph"),
-    ("3d", {}, "Select the z-axis to show the 3d graph"),
-    ("3d", {"z": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
-    ("scatter", {"y": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
-    ("scatter", {"x": "a", "y": "b"}, f"{EXAMPLE_DATABASE} has no a, b columns"),
-])
+@pytest.mark.parametrize(
+    "graph_type, axes, message",
+    [
+        ("scatter", {"x": None}, "Select the x-axis to show the scatter graph"),
+        ("3d", {}, "Select the z-axis to show the 3d graph"),
+        ("3d", {"z": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
+        ("scatter", {"y": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
+        ("scatter", {"x": "a", "y": "b"}, f"{EXAMPLE_DATABASE} has no a, b columns"),
+    ],
+)
 def test_graph_without_its_axes(client, store, graph_type, axes, message):
     code, response = graph(client, dict(store, graph=graph_type, **axes))
     assert code == 200
@@ -386,7 +511,12 @@ def test_scatter2_graph(client, store):
     assert [(t["xaxis"], t["yaxis"]) for t in traces] == [("x", "y")] * 2 + [("x2", "y2")] * 2
     assert [t["showlegend"] for t in traces] == [True, True, False, False]
     assert legend(response) == ["green ( 3004 / 43.9% )", "all ( 3839 / 56.1% )"] * 2
-    assert [figure["layout"][a]["title"]["text"] for a in ("xaxis", "yaxis", "xaxis2", "yaxis2")] == ["delay", "length", "id", "delay"]
+    assert [figure["layout"][a]["title"]["text"] for a in ("xaxis", "yaxis", "xaxis2", "yaxis2")] == [
+        "delay",
+        "length",
+        "id",
+        "delay",
+    ]
     code, response = graph(client, dict(store, graph="scatter2"))
     assert graph_message(response) == "Select the x-axis (right) and y-axis (right) to show the scatter2 graph"
 
@@ -405,7 +535,10 @@ def test_mega_graph(client, store):
     code, response = graph(client, dict(store, graph="mega", mega=["length", "delay"]))
     figure = response["graph"]["figure"]
     assert {trace["type"] for trace in figure["data"]} == {"scattergl"}
-    assert (figure["layout"]["xaxis"]["title"]["text"], figure["layout"]["yaxis"]["title"]["text"]) == ("length", "delay")
+    assert (figure["layout"]["xaxis"]["title"]["text"], figure["layout"]["yaxis"]["title"]["text"]) == (
+        "length",
+        "delay",
+    )
     code, response = graph(client, dict(store, graph="mega", mega=["length", "color"]))
     assert graph_message(response) == "Select at least two number columns for the mega graph (length)"
 
@@ -441,25 +574,43 @@ def test_graph_keeps_its_zoom(client, store):
 
 
 def click(client, store, curve, point, **coordinates):
-    values = {"graph.clickData": {"points": [{"curveNumber": curve, "pointNumber": point, **coordinates}]}, "config-store.data": store}
+    values = {
+        "graph.clickData": {"points": [{"curveNumber": curve, "pointNumber": point, **coordinates}]},
+        "config-store.data": store,
+    }
     return client.call("experiment.children", values, "graph.clickData")
 
 
 def text(node):
     """All text in a (Dash JSON) component tree."""
     if isinstance(node, dict):
-        return text(node.get("props", {}).get("children")) if "props" in node else " ".join(text(v) for v in node.values())
+        return (
+            text(node.get("props", {}).get("children")) if "props" in node else " ".join(text(v) for v in node.values())
+        )
     if isinstance(node, list):
         return " ".join(text(child) for child in node)
     return "" if node is None else str(node)
 
 
 def test_clicked_experiment(client, tmp_path, make_database):
-    make_database(rows=[(1, 10, 3, "G", b"ok"), (2, 20, 3, "R", b"crash\x00"), (3, 30, 3, "R", b"crash\x00"),
-                        (4, 40, 3, "Y", b"ok")])
+    make_database(
+        rows=[
+            (1, 10, 3, "G", b"ok"),
+            (2, 20, 3, "R", b"crash\x00"),
+            (3, 30, 3, "R", b"crash\x00"),
+            (4, 40, 3, "Y", b"ok"),
+        ]
+    )
     # recolored: G (ids 1, 2, 3) and Y (id 4); the traces in COLOR_ORDER
-    store = dict(client.layout_store(), directory=str(tmp_path), database="test.sqlite", x="delay", y="length",
-                 colors={"green": ["crash", None]}, fixgreen=False)
+    store = dict(
+        client.layout_store(),
+        directory=str(tmp_path),
+        database="test.sqlite",
+        x="delay",
+        y="length",
+        colors={"green": ["crash", None]},
+        fixgreen=False,
+    )
     code, response = click(client, store, 0, 1)
     assert code == 200
     shown = text(response["experiment"]["children"])
@@ -491,7 +642,15 @@ def test_clicked_experiment_of_a_sample(client, tmp_path, make_database, monkeyp
 
     monkeypatch.setitem(common.MAX_POINTS, "3d", 50)
     make_database(rows=[(i, i, 2 * i, "G", b"x") for i in range(500)])
-    store = dict(client.layout_store(), directory=str(tmp_path), database="test.sqlite", x="delay", y="length", z="id", graph="3d")
+    store = dict(
+        client.layout_store(),
+        directory=str(tmp_path),
+        database="test.sqlite",
+        x="delay",
+        y="length",
+        z="id",
+        graph="3d",
+    )
     # the 4th point drawn
     row = int(common.sample(np.array(["G"] * 500, dtype=object), 50).nonzero()[0][3])
     code, response = click(client, store, 0, 3, x=row, y=2 * row, z=row)
@@ -504,7 +663,9 @@ def test_graph_without_hover(client, store):
 
 
 def test_graph_of_a_non_analyzer_database(client, store, tmp_path, make_database):
-    make_database("no-response.sqlite", columns="id integer, delay integer, length integer, color text", rows=[(1, 1, 1, "G")])
+    make_database(
+        "no-response.sqlite", columns="id integer, delay integer, length integer, color text", rows=[(1, 1, 1, "G")]
+    )
     code, response = graph(client, dict(store, directory=str(tmp_path), database="no-response.sqlite"))
     assert code == 200
     assert graph_message(response) == "no-response.sqlite has no response column"
@@ -529,8 +690,10 @@ def test_not_enough_memory_is_shown(client, store, monkeypatch):
     monkeypatch.setattr(database, "available_memory", lambda: 100 * 2**20)
     code, response = graph(client, store)
     assert code == 200
-    assert graph_message(response) == (f"{EXAMPLE_DATABASE}: not enough memory: stopped after 6843 experiments "
-                                       "(100 MB left); use a query to load fewer experiments")
+    assert graph_message(response) == (
+        f"{EXAMPLE_DATABASE}: not enough memory: stopped after 6843 experiments "
+        "(100 MB left); use a query to load fewer experiments"
+    )
 
 
 #
@@ -542,7 +705,15 @@ def test_data(client, store):
     code, response = data(client, store, hidden=["hex(response)"])
     assert code == 200
     grid = response["data"]["children"]["props"]
-    assert response["data-columns"]["options"] == ["id", "delay", "length", "color", "rlen", "response", "hex(response)"]
+    assert response["data-columns"]["options"] == [
+        "id",
+        "delay",
+        "length",
+        "color",
+        "rlen",
+        "response",
+        "hex(response)",
+    ]
     assert response["data-columns"]["value"] == ["id", "delay", "length", "color", "rlen", "response"]
     assert [d["field"] for d in grid["columnDefs"] if d["hide"]] == ["hex(response)"]
     rows = get_rows(client, store, grid["id"], start=0, end=5)
@@ -554,8 +725,14 @@ def test_data_squeezed(client, store):
     code, response = data(client, store, squeeze=True)
     grid = response["data"]["children"]["props"]
     assert response["data-columns"]["options"][:3] == ["amount", "min(id)", "max(id)"]
-    rows = get_rows(client, store, grid["id"], squeeze=True, filters={"max(delay)": {"filterType": "number", "type": "greaterThan", "filter": 1990}},
-                    sort=[{"colId": "amount", "sort": "desc"}])
+    rows = get_rows(
+        client,
+        store,
+        grid["id"],
+        squeeze=True,
+        filters={"max(delay)": {"filterType": "number", "type": "greaterThan", "filter": 1990}},
+        sort=[{"colId": "amount", "sort": "desc"}],
+    )
     amounts = [row["amount"] for row in rows["rowData"]]
     assert amounts == sorted(amounts, reverse=True)
     assert all(row["max(delay)"] > 1990 for row in rows["rowData"])
@@ -588,11 +765,19 @@ def test_show_and_hide_columns(client, store):
     _, response = data(client, store, hidden=["hex(response)", "min(only-when-squeezed)"])
     grid = response["data"]["children"]["props"]
     shown = [c for c in response["data-columns"]["value"] if c not in ("delay", "rlen")] + ["hex(response)"]
-    values = {"data-columns.value": shown, "data-columns.options": response["data-columns"]["options"],
-              "data-hidden-columns.data": ["hex(response)", "min(only-when-squeezed)"]}
-    code, response = client.call("data-hidden-columns.data", values, "data-columns.value", ids={
-        f"{GRIDS}.columnDefs": [(grid["id"], grid["columnDefs"])],
-    })
+    values = {
+        "data-columns.value": shown,
+        "data-columns.options": response["data-columns"]["options"],
+        "data-hidden-columns.data": ["hex(response)", "min(only-when-squeezed)"],
+    }
+    code, response = client.call(
+        "data-hidden-columns.data",
+        values,
+        "data-columns.value",
+        ids={
+            f"{GRIDS}.columnDefs": [(grid["id"], grid["columnDefs"])],
+        },
+    )
     assert code == 200
     # hidden columns of the other (squeezed) table are kept
     assert response["data-hidden-columns"]["data"] == ["delay", "min(only-when-squeezed)", "rlen"]
@@ -613,8 +798,12 @@ def test_column_defs():
     wrapped = {d["field"]: d for d in column_defs(table, wraptext=True, hidden=set())}
     assert wrapped["response"]["wrapText"] and wrapped["hex(response)"]["wrapText"]
     # squeezed: the smallest and largest value of number columns
-    squeezed = Table(pd.DataFrame({"amount": [2], "min(glitch_power)": [1], "max(glitch_power)": [5]}), [b"x"],
-                     squeezed=True, numeric={"amount", "min(glitch_power)", "max(glitch_power)"})
+    squeezed = Table(
+        pd.DataFrame({"amount": [2], "min(glitch_power)": [1], "max(glitch_power)": [5]}),
+        [b"x"],
+        squeezed=True,
+        numeric={"amount", "min(glitch_power)", "max(glitch_power)"},
+    )
     defs = {d["field"]: d for d in column_defs(squeezed, wraptext=False, hidden=set())}
     assert defs["min(glitch_power)"]["headerName"] == "Min(Glitch_power)"
     assert defs["max(glitch_power)"]["headerName"] == "Max(Glitch_power)"
@@ -685,7 +874,9 @@ def test_information(client, store):
 
 def test_zoomed_points(client, store):
     def points(zoom):
-        _, response = client.call("points.children", {"zoom-store.data": zoom, "config-store.data": store}, "zoom-store.data")
+        _, response = client.call(
+            "points.children", {"zoom-store.data": zoom, "config-store.data": store}, "zoom-store.data"
+        )
         return response["points"]["children"]
 
     assert points(None) == "Zoom into the graph to see the selected range here."
@@ -699,8 +890,13 @@ def test_zoomed_points(client, store):
 
 
 def browse(client, trigger, directory=None, browsed=None, entries=()):
-    values = {"directory-browse.n_clicks": 1, "browse-select.n_clicks": 1, "browse-cancel.n_clicks": 1,
-              "directory-input.value": directory, "browse-directory.data": browsed}
+    values = {
+        "directory-browse.n_clicks": 1,
+        "browse-select.n_clicks": 1,
+        "browse-cancel.n_clicks": 1,
+        "directory-input.value": directory,
+        "browse-directory.data": browsed,
+    }
     entry_id = '{"index":["ALL"],"type":"browse-entry"}.n_clicks'
     return client.call("directory-modal.is_open", values, trigger, ids={entry_id: list(entries)})
 
@@ -712,13 +908,17 @@ def test_directory_browser(client, tmp_path):
     code, response = browse(client, "directory-browse.n_clicks", directory=str(tmp_path))
     assert response == {"directory-modal": {"is_open": True}, "browse-directory": {"data": str(tmp_path)}}
 
-    code, response = client.call("browse-list.children", {"browse-directory.data": str(tmp_path)}, "browse-directory.data")
+    code, response = client.call(
+        "browse-list.children", {"browse-directory.data": str(tmp_path)}, "browse-directory.data"
+    )
     entries = [item["props"]["id"]["index"] for item in response["browse-list"]["children"]]
     assert entries == [str(tmp_path.parent), str(tmp_path / "sub")]
 
     # clicking an entry walks into it; new (unclicked) entries don't
     sub = {"index": str(tmp_path / "sub"), "type": "browse-entry"}
-    code, response = browse(client, '{"index":"%s","type":"browse-entry"}.n_clicks' % (tmp_path / "sub"), entries=[(sub, 1)])
+    code, response = browse(
+        client, '{"index":"%s","type":"browse-entry"}.n_clicks' % (tmp_path / "sub"), entries=[(sub, 1)]
+    )
     assert response == {"browse-directory": {"data": str(tmp_path / "sub")}}
 
     code, response = browse(client, "browse-select.n_clicks", browsed=str(tmp_path / "sub"))

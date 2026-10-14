@@ -4,6 +4,7 @@ The selection-store keeps the outline of the selection, not the selected points
 (those can be a million): the experiments inside it are found here, at the
 positions they were plotted at (the jitter is the same every time).
 """
+
 import json
 
 import numpy as np

@@ -1,4 +1,5 @@
 """The presets of the command line and the environment (gunicorn) end up in the page."""
+
 import json
 import os
 import subprocess
@@ -29,9 +30,23 @@ def config_store(layout):
 def test_command_line():
     port = free_port()
     arguments = [f"--{axis}={value}" for axis, value in AXES.items()]
-    process = subprocess.Popen([sys.executable, "taofi-analyzer.py", EXAMPLE_DIRECTORY, "--port", str(port),
-                                "--database", EXAMPLE_DATABASE, "--graph", "scatter2", *arguments], cwd=REPO,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "taofi-analyzer.py",
+            EXAMPLE_DIRECTORY,
+            "--port",
+            str(port),
+            "--database",
+            EXAMPLE_DATABASE,
+            "--graph",
+            "scatter2",
+            *arguments,
+        ],
+        cwd=REPO,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     try:
         for _ in range(100):
             try:
@@ -49,16 +64,23 @@ def test_command_line():
 
 def run_with(environment):
     """The initial config-store when started with ``environment`` (as gunicorn does)."""
-    script = "import importlib, json; from dataclasses import asdict; importlib.import_module('taofi-analyzer'); " \
-             "from analyzer.config import server_config; from analyzer.graphs import common; " \
-             "print(json.dumps({**asdict(server_config), 'default_max_points': common.DEFAULT_MAX_POINTS}))"
+    script = (
+        "import importlib, json; from dataclasses import asdict; importlib.import_module('taofi-analyzer'); "
+        "from analyzer.config import server_config; from analyzer.graphs import common; "
+        "print(json.dumps({**asdict(server_config), 'default_max_points': common.DEFAULT_MAX_POINTS}))"
+    )
     environment = dict(os.environ, ANALYZER_DIRECTORY=EXAMPLE_DIRECTORY, **environment)
     return subprocess.run([sys.executable, "-c", script], cwd=REPO, env=environment, capture_output=True, text=True)
 
 
 def test_environment():
-    output = run_with({"ANALYZER_DATABASE": EXAMPLE_DATABASE, "ANALYZER_GRAPH": "3d",
-                       **{f"ANALYZER_{axis.upper()}": value for axis, value in AXES.items()}})
+    output = run_with(
+        {
+            "ANALYZER_DATABASE": EXAMPLE_DATABASE,
+            "ANALYZER_GRAPH": "3d",
+            **{f"ANALYZER_{axis.upper()}": value for axis, value in AXES.items()},
+        }
+    )
     assert output.returncode == 0, output.stderr
     store = json.loads(output.stdout.strip().splitlines()[-1])
     assert (store["database"], store["graph"]) == (EXAMPLE_DATABASE, "3d")

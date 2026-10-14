@@ -7,9 +7,27 @@ import pytest
 
 from analyzer import database
 from analyzer.config import server_config
-from analyzer.database import (appended_to, available_memory, being_written, connect, data_directory, database_path, file_key, get_argv, get_databases,
-                               get_number_of_experiments, get_parameters, list_directory, load_dataframe, load_experiments, run_query,
-                               match_hex, match_string, query_connection, query_error)
+from analyzer.database import (
+    appended_to,
+    available_memory,
+    being_written,
+    connect,
+    data_directory,
+    database_path,
+    file_key,
+    get_argv,
+    get_databases,
+    get_number_of_experiments,
+    get_parameters,
+    list_directory,
+    load_dataframe,
+    load_experiments,
+    run_query,
+    match_hex,
+    match_string,
+    query_connection,
+    query_error,
+)
 from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, EXAMPLE_EXPERIMENTS, create_database
 
 COLUMNS = "id integer, delay integer, length integer, color text, response blob"
@@ -20,15 +38,18 @@ COLUMNS = "id integer, delay integer, length integer, color text, response blob"
 #
 
 
-@pytest.mark.parametrize("name", [
-    "../databases/" + EXAMPLE_DATABASE,
-    "/etc/passwd",
-    "..",
-    "missing.sqlite",
-    "not-a-database.txt",
-    "",
-    None,
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../databases/" + EXAMPLE_DATABASE,
+        "/etc/passwd",
+        "..",
+        "missing.sqlite",
+        "not-a-database.txt",
+        "",
+        None,
+    ],
+)
 def test_database_path_rejects(request_from, name):
     with request_from("127.0.0.1"):
         assert database_path(EXAMPLE_DIRECTORY, name) is None
@@ -98,7 +119,9 @@ def test_slow_queries_are_interrupted(tmp_path, make_database, monkeypatch):
     con = query_connection(str(tmp_path / "test.sqlite"))
     started = time.monotonic()
     with pytest.raises(sqlite3.OperationalError) as error:
-        con.execute("WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 20000000) SELECT count(*) FROM r").fetchall()
+        con.execute(
+            "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 20000000) SELECT count(*) FROM r"
+        ).fetchall()
     assert time.monotonic() - started < 5
     assert query_error(error.value) == "the query took longer than 0.5 s"
 

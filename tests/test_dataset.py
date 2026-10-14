@@ -185,8 +185,11 @@ def test_new_experiments_with_a_query(config, loads):
 
 def test_a_replaced_database_is_loaded_again(config, loads, tmp_path):
     get_dataset(config)
-    create_database(str(tmp_path / "new.sqlite"), "id integer, delay integer, length integer, color text, response blob",
-                    [(i, i, 1, "G", b"x") for i in range(100, 108)]).close()
+    create_database(
+        str(tmp_path / "new.sqlite"),
+        "id integer, delay integer, length integer, color text, response blob",
+        [(i, i, 1, "G", b"x") for i in range(100, 108)],
+    ).close()
     os.replace(tmp_path / "new.sqlite", tmp_path / "test.sqlite")
     assert list(get_dataset(config).df["id"]) == list(range(100, 108))
     assert loads == [0, 0]
@@ -209,8 +212,9 @@ def test_caches_are_emptied_when_memory_runs_out(config, monkeypatch, make_datab
     other = AnalyzerConfig(directory=config.directory, database="other.sqlite")
     table.get_table(get_dataset(other), other, True, None, None)
     # not enough memory, until the caches are emptied
-    monkeypatch.setattr(database, "available_memory",
-                        lambda: 2**40 if not (dataset_module._DATASET_CACHE or table._TABLE_CACHE) else 0)
+    monkeypatch.setattr(
+        database, "available_memory", lambda: 2**40 if not (dataset_module._DATASET_CACHE or table._TABLE_CACHE) else 0
+    )
     assert len(get_dataset(config).df) == 5
     assert list(dataset_module._DATASET_CACHE) == [(os.path.join(config.directory, "test.sqlite"), "")]
     assert not table._TABLE_CACHE

@@ -1,4 +1,5 @@
 """The callbacks of the app (except the tab contents, see layout.py)."""
+
 import json
 import os
 import zlib
@@ -14,8 +15,19 @@ from dash.exceptions import PreventUpdate
 from dash_ag_grid import AgGrid
 
 from analyzer.config import COLORS, ROW_COLORS, AnalyzerConfig, server_config
-from analyzer.database import (counting, data_directory, database_path, file_key, get_argv, get_databases,
-                               get_parameters, is_local_request, list_directory, query_error, run_query)
+from analyzer.database import (
+    counting,
+    data_directory,
+    database_path,
+    file_key,
+    get_argv,
+    get_databases,
+    get_parameters,
+    is_local_request,
+    list_directory,
+    query_error,
+    run_query,
+)
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
 from analyzer.layout import EXPERIMENT_HIDDEN, EXPERIMENT_SHOWN, axis_style, mega_style
@@ -25,8 +37,11 @@ from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, PLOT_AXES, graph_axes
 from analyzer.graphs.common import clicked_experiment, message_figure, plotted_at, shown_points
 
 # the text fields of the graph tab; applied by Update or enter (see update_store())
-TEXT_FIELDS = (["query-input", "jitter-input", "max-points-input"] + [f"recolor-{color}" for color in COLORS]
-               + [f"recolor-{color}-label" for color in COLORS])
+TEXT_FIELDS = (
+    ["query-input", "jitter-input", "max-points-input"]
+    + [f"recolor-{color}" for color in COLORS]
+    + [f"recolor-{color}-label" for color in COLORS]
+)
 
 _PAGE_SIZE = 100
 _MAX_ROWS = 1000  # per request of the data grid
@@ -173,17 +188,18 @@ def register_callbacks(app):
         parent = os.path.dirname(directory)
         items = []
         if parent != directory:
-            items.append(
-                dbc.ListGroupItem(
-                    "..", id={"type": "browse-entry", "index": parent}, action=True, n_clicks=0
-                )
-            )
+            items.append(dbc.ListGroupItem("..", id={"type": "browse-entry", "index": parent}, action=True, n_clicks=0))
         for name, count in subdirectories:
             items.append(
                 dbc.ListGroupItem(
                     [
                         name,
-                        dbc.Badge(count, color="primary" if count else "light", text_color=None if count else "secondary", className="ms-2"),
+                        dbc.Badge(
+                            count,
+                            color="primary" if count else "light",
+                            text_color=None if count else "secondary",
+                            className="ms-2",
+                        ),
                     ],
                     id={"type": "browse-entry", "index": os.path.join(directory, name)},
                     action=True,
@@ -237,16 +253,37 @@ def register_callbacks(app):
             applied=State("applied-fields", "data"),
         ),
     )
-    def update_store(update, database, axes, mega, n_intervals, fixgreen, graph, directory, submits,
-                     query, store, jitter, max_points, regexes, labels, applied):
+    def update_store(
+        update,
+        database,
+        axes,
+        mega,
+        n_intervals,
+        fixgreen,
+        graph,
+        directory,
+        submits,
+        query,
+        store,
+        jitter,
+        max_points,
+        regexes,
+        labels,
+        applied,
+    ):
         config = AnalyzerConfig.from_store(store)
 
         def result(database=no_update, applied=no_update, fields=no_update):
             if fields is no_update:
                 fields = [no_update] * len(TEXT_FIELDS)
-            return {"store": asdict(config), "database": database, "axes": [getattr(config, axis) for axis in AXES],
-                    "mega": config.mega,
-                    "applied": applied, "fields": fields}
+            return {
+                "store": asdict(config),
+                "database": database,
+                "axes": [getattr(config, axis) for axis in AXES],
+                "mega": config.mega,
+                "applied": applied,
+                "fields": fields,
+            }
 
         directory = data_directory(directory)
         if directory is None:
@@ -313,7 +350,12 @@ def register_callbacks(app):
             for color, regex, label in zip(COLORS, regexes, labels):
                 config.colors[color] = [regex, label]
             # (kept by the browser)
-            applied = {"query": config.query, "jitter": config.jitter, "max_points": config.max_points, "colors": config.colors}
+            applied = {
+                "query": config.query,
+                "jitter": config.jitter,
+                "max_points": config.max_points,
+                "colors": config.colors,
+            }
 
         return result(config.database, applied, restored)
 
@@ -350,8 +392,6 @@ def register_callbacks(app):
     def show_axes(graph):
         return [axis_style(graph, axis) for axis in AXES] + [mega_style(graph)]
 
-
-
     # callback graph; chained from update_store()
     @app.callback(
         Output("graph", "figure"),
@@ -385,7 +425,9 @@ def register_callbacks(app):
         # e.g. another database without the selected columns
         missing = [getattr(config, axis) for axis in axes if getattr(config, axis) not in dataset.df.columns]
         if missing:
-            return message_figure(f"{config.database} has no {', '.join(missing)} column{'s' if len(missing) > 1 else ''}")
+            return message_figure(
+                f"{config.database} has no {', '.join(missing)} column{'s' if len(missing) > 1 else ''}"
+            )
 
         # create graph
         if config.graph in GRAPHS:
@@ -480,8 +522,9 @@ def register_callbacks(app):
         # the traces are the colors of the graph, see color_traces()
         plots = PLOT_AXES.get(config.graph, [{}])
         colors = dataset.colors_for(config)
-        clicked = clicked_experiment(colors, points[0].get("curveNumber", 0), points[0]["pointNumber"],
-                                     len(plots), shown_points(colors, config))
+        clicked = clicked_experiment(
+            colors, points[0].get("curveNumber", 0), points[0]["pointNumber"], len(plots), shown_points(colors, config)
+        )
         if clicked is not None:
             index, plot = clicked
             columns = {coordinate: getattr(config, axis) for coordinate, axis in plots[plot].items()}
@@ -568,7 +611,10 @@ def register_callbacks(app):
 
         # a new id per grid configuration makes the grid remount and re-request its rows
         selected = zlib.crc32(selection_key(selection).encode()) if table.selected is not None else ""
-        grid_id = {"type": "data-grid", "index": f"{int(bool(squeeze))}-{int(bool(wraptext))}-{response_s}-{response_e}-{selected}"}
+        grid_id = {
+            "type": "data-grid",
+            "index": f"{int(bool(squeeze))}-{int(bool(wraptext))}-{response_s}-{response_e}-{selected}",
+        }
         grid = data_grid(grid_id, column_defs(table, wraptext, hidden), wraptext)
 
         if table.selected is None:
@@ -676,8 +722,11 @@ def register_callbacks(app):
 
 def text_fields(config):
     """The values of the TEXT_FIELDS for ``config``."""
-    return ([config.query, config.jitter, config.max_points] + [config.colors[color][0] for color in COLORS]
-            + [config.colors[color][1] for color in COLORS])
+    return (
+        [config.query, config.jitter, config.max_points]
+        + [config.colors[color][0] for color in COLORS]
+        + [config.colors[color][1] for color in COLORS]
+    )
 
 
 def query_grid(df):
@@ -713,12 +762,21 @@ def experiment_card(dataset, config, index):
         if column == "color" and shown != value:
             value = f"{value} (shown as {shown})"
         values.append(html.Tr([html.Th(column, className="pe-3"), html.Td("" if pd.isna(value) else str(value))]))
-    values.append(html.Tr([html.Th("response", className="pe-3"),
-                           html.Td(f"{len(response)} bytes, the same for {same} of {len(dataset.df)} experiments")]))
+    values.append(
+        html.Tr(
+            [
+                html.Th("response", className="pe-3"),
+                html.Td(f"{len(response)} bytes, the same for {same} of {len(dataset.df)} experiments"),
+            ]
+        )
+    )
 
     def block(text, **style):
-        return html.Pre(text, style={"whiteSpace": "pre-wrap", "wordBreak": "break-all", "maxHeight": "300px", **style},
-                        className="border rounded p-2 mb-2")
+        return html.Pre(
+            text,
+            style={"whiteSpace": "pre-wrap", "wordBreak": "break-all", "maxHeight": "300px", **style},
+            className="border rounded p-2 mb-2",
+        )
 
     return [
         html.Table(html.Tbody(values), className="mb-2"),
@@ -729,8 +787,13 @@ def experiment_card(dataset, config, index):
 
 def graph_revision(config):
     """What makes it another graph (with its own zoom); the same in the zoom-store callback."""
-    values = (config.directory, config.database, *[getattr(config, axis) for axis in AXES], config.graph,
-              ",".join(config.mega or []))
+    values = (
+        config.directory,
+        config.database,
+        *[getattr(config, axis) for axis in AXES],
+        config.graph,
+        ",".join(config.mega or []),
+    )
     return "|".join("" if v is None else str(v) for v in values)
 
 
@@ -748,9 +811,13 @@ def column_defs(table, wraptext, hidden):
         elif column in table.numeric or column in ["color", "rlen"]:
             definition = {"maxWidth": 100, **centered}
         elif column == "response":
-            definition = {"width": 500, "wrapText": True, "autoHeight": True} if wraptext else {"flex": 2, "minWidth": 300}
+            definition = (
+                {"width": 500, "wrapText": True, "autoHeight": True} if wraptext else {"flex": 2, "minWidth": 300}
+            )
         elif column == "hex(response)":
-            definition = {"width": 500, "wrapText": True, "autoHeight": True} if wraptext else {"flex": 3, "minWidth": 300}
+            definition = (
+                {"width": 500, "wrapText": True, "autoHeight": True} if wraptext else {"flex": 3, "minWidth": 300}
+            )
             definition["cellStyle"] = {"font-family": "monospace"}
         else:
             definition = {}

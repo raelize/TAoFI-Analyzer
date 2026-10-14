@@ -1,4 +1,5 @@
 """The graph types (see the graph dropdown)."""
+
 from analyzer.graphs.mega import mega_func
 from analyzer.graphs.scatter import scatter_func
 from analyzer.graphs.scatter2 import scatter2_func

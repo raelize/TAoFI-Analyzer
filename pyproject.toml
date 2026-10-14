@@ -28,6 +28,9 @@ dev = [
 # only the analyzer is Python code (pages/, assets/ and databases/ are data)
 packages = ["analyzer", "analyzer.graphs"]
 
+[tool.ruff]
+line-length = 120
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

@@ -1,4 +1,5 @@
 """The page layout and the contents of the tabs."""
+
 import os
 from dataclasses import asdict
 
@@ -17,14 +18,15 @@ GUIDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pages", 
 # centered column used by the header, the tabs and their contents
 PAGE_STYLE = {"width": "80%", "border-style": "none", "margin": "0 auto"}
 
+
 def loading(child, **kwargs):
     """``child`` with a loading indicator (shown after 150 ms)."""
     return dcc.Loading(child, type="circle", delay_show=150, **kwargs)
 
+
 # the panel of the experiment clicked in the graph
 EXPERIMENT_SHOWN = {"width": "420px", "flexShrink": 0, "maxHeight": "1000px", "overflowY": "auto"}
 EXPERIMENT_HIDDEN = {**EXPERIMENT_SHOWN, "display": "none"}
-
 
 
 def create_layout(app):
@@ -49,7 +51,11 @@ def create_layout(app):
                     html.Span(
                         [
                             html.Span("", id="timing-label"),
-                            html.Span("", id="timing-client", title="time from sending the request until the browser rendered the result"),
+                            html.Span(
+                                "",
+                                id="timing-client",
+                                title="time from sending the request until the browser rendered the result",
+                            ),
                             html.Span("", id="timing", title="time spent in the server callback"),
                         ],
                         style={"fontFamily": "monospace", "color": "#666"},
@@ -192,8 +198,12 @@ def graph_tab(config, refresh):
                 html.Div(
                     [
                         *[
-                            dcc.Dropdown(id=f"{axis}-dropdown", placeholder=AXIS_NAMES[axis], value=getattr(config, axis),
-                                         style=axis_style(config.graph, axis))
+                            dcc.Dropdown(
+                                id=f"{axis}-dropdown",
+                                placeholder=AXIS_NAMES[axis],
+                                value=getattr(config, axis),
+                                style=axis_style(config.graph, axis),
+                            )
                             for axis in AXES
                         ],
                         html.Span("jitter", className="mx-2 text-muted align-self-center"),
@@ -230,7 +240,7 @@ def graph_tab(config, refresh):
                                 style={"width": "100px", "height": "100%"},
                             ),
                             title="The points the graph draws at most (a sample of the experiments): "
-                                  "empty for the default, 0 for all of them",
+                            "empty for the default, 0 for all of them",
                         ),
                     ],
                     style={"display": "flex"},
@@ -371,10 +381,26 @@ def data_tab(config, refresh):
             [
                 html.Div(
                     [
-                        dbc.Switch(id="switch-squeezedata", value=True, label="Squeeze Data", className="d-inline-block me-3"),
-                        dbc.Switch(id="switch-wraptext", value=False, label="Wrap response", className="d-inline-block me-3"),
-                        dcc.Input(id="response_s", type="number", placeholder="start", className="d-inline-block me-2", persistence=True),
-                        dcc.Input(id="response_e", type="number", placeholder="end", className="d-inline-block me-2", persistence=True),
+                        dbc.Switch(
+                            id="switch-squeezedata", value=True, label="Squeeze Data", className="d-inline-block me-3"
+                        ),
+                        dbc.Switch(
+                            id="switch-wraptext", value=False, label="Wrap response", className="d-inline-block me-3"
+                        ),
+                        dcc.Input(
+                            id="response_s",
+                            type="number",
+                            placeholder="start",
+                            className="d-inline-block me-2",
+                            persistence=True,
+                        ),
+                        dcc.Input(
+                            id="response_e",
+                            type="number",
+                            placeholder="end",
+                            className="d-inline-block me-2",
+                            persistence=True,
+                        ),
                     ],
                     className="mb-0",
                 ),
@@ -440,7 +466,11 @@ def database_tab(config, refresh):
                         placeholder="columns",
                         style={"width": "150px", "display": "inline-block", "marginRight": "5px"},
                     ),
-                    html.Span(" FROM experiments WHERE ", style={"margin": "0 5px", "fontWeight": "bold"}, className="text-nowrap"),
+                    html.Span(
+                        " FROM experiments WHERE ",
+                        style={"margin": "0 5px", "fontWeight": "bold"},
+                        className="text-nowrap",
+                    ),
                     dbc.Input(
                         id="where-input",
                         type="text",
@@ -448,7 +478,9 @@ def database_tab(config, refresh):
                         placeholder="",
                         style={"flex": 1, "display": "inline-block", "marginRight": "10px"},
                     ),
-                    dbc.Button("Execute", id="query-button", n_clicks=0, color="primary", style={"display": "inline-block"}),
+                    dbc.Button(
+                        "Execute", id="query-button", n_clicks=0, color="primary", style={"display": "inline-block"}
+                    ),
                 ],
                 style={"display": "flex", "alignItems": "center"},
             ),

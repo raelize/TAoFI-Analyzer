@@ -70,7 +70,9 @@ def test_graphs_draw_a_sample(tmp_path, make_database, request_from, monkeypatch
 
     monkeypatch.setitem(common.MAX_POINTS, graph, 60)
     make_database(rows=[(i, i, i, "G", b"x") for i in range(500)])
-    config = AnalyzerConfig(directory=str(tmp_path), database="test.sqlite", x="delay", y="length", x2="id", y2="delay", graph=graph)
+    config = AnalyzerConfig(
+        directory=str(tmp_path), database="test.sqlite", x="delay", y="length", x2="id", y2="delay", graph=graph
+    )
     with request_from("127.0.0.1"):
         figure = GRAPHS[graph]("delay", "length", True, get_dataset(config), config, [], *[None] * 16)
     drawn = [len(trace.x) if trace.type != "splom" else len(trace.dimensions[0].values) for trace in figure.data]
@@ -101,6 +103,8 @@ def test_graph_with_max_points(tmp_path, make_database, request_from):
     make_database(rows=[(i, i, i, "G", b"x") for i in range(500)])
     with request_from("127.0.0.1"):
         for limit, drawn in [(50, range(25, 75)), (0, [500]), (None, [500])]:
-            config = AnalyzerConfig(directory=str(tmp_path), database="test.sqlite", x="delay", y="length", max_points=limit)
+            config = AnalyzerConfig(
+                directory=str(tmp_path), database="test.sqlite", x="delay", y="length", max_points=limit
+            )
             figure = GRAPHS["scatter"]("delay", "length", True, get_dataset(config), config, [], *[None] * 16)
             assert len(figure.data[0].x) in drawn

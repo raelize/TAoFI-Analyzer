@@ -108,12 +108,15 @@ if __name__ == "__main__":
         parser.add_argument(f"--{axis}", required=False, help=AXIS_HELP[axis])
     parser.add_argument("--database", required=False, help="Preset the database")
     parser.add_argument("--graph", required=False, choices=list(GRAPHS), help="Preset the graph type")
-    parser.add_argument("--max-points", required=False, type=int, metavar="N",
-                        help="The points a graph draws at most (default: 200000, 100000 for 3d; 0: all)")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {PROJECT_METADATA['version']}"
+        "--max-points",
+        required=False,
+        type=int,
+        metavar="N",
+        help="The points a graph draws at most (default: 200000, 100000 for 3d; 0: all)",
     )
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {PROJECT_METADATA['version']}")
 
     args = parser.parse_args()
 

@@ -37,8 +37,18 @@ def rows(table, start=0, end=100, sort=(), filters=None):
 def test_columns_follow_the_database(dataset):
     table = build_table(dataset, dataset.base_colors, False, None, None)
     # all columns in database order, except the empty one; response columns last
-    assert table.columns == ["id", "glitch_delay", "normal_voltage", "note", "extra", "sometimes", "color",
-                             "rlen", "response", "hex(response)"]
+    assert table.columns == [
+        "id",
+        "glitch_delay",
+        "normal_voltage",
+        "note",
+        "extra",
+        "sometimes",
+        "color",
+        "rlen",
+        "response",
+        "hex(response)",
+    ]
     assert table.numeric == {"id", "glitch_delay", "normal_voltage", "sometimes"}
 
 
@@ -47,10 +57,17 @@ def test_rows(dataset):
     page, count = rows(table)
     assert count == 4
     assert page[0] == {
-        "id": 1, "glitch_delay": 10, "normal_voltage": 1.5, "note": "a",
+        "id": 1,
+        "glitch_delay": 10,
+        "normal_voltage": 1.5,
+        "note": "a",
         # other blobs are shown as hex
-        "extra": "00 ff", "sometimes": None, "color": "G",
-        "rlen": 2, "response": "OK", "hex(response)": "4f 4b",
+        "extra": "00 ff",
+        "sometimes": None,
+        "color": "G",
+        "rlen": 2,
+        "response": "OK",
+        "hex(response)": "4f 4b",
     }
 
 
@@ -68,11 +85,34 @@ def test_slicing(dataset):
 
 def test_squeeze(dataset):
     table = build_table(dataset, dataset.base_colors, True, None, None)
-    assert table.columns == ["amount", "min(id)", "max(id)", "min(glitch_delay)", "max(glitch_delay)",
-                             "min(normal_voltage)", "max(normal_voltage)", "note", "extra",
-                             "min(sometimes)", "max(sometimes)", "color", "response", "rlen", "hex(response)"]
-    assert table.numeric == {"amount", "min(id)", "max(id)", "min(glitch_delay)", "max(glitch_delay)",
-                             "min(normal_voltage)", "max(normal_voltage)", "min(sometimes)", "max(sometimes)"}
+    assert table.columns == [
+        "amount",
+        "min(id)",
+        "max(id)",
+        "min(glitch_delay)",
+        "max(glitch_delay)",
+        "min(normal_voltage)",
+        "max(normal_voltage)",
+        "note",
+        "extra",
+        "min(sometimes)",
+        "max(sometimes)",
+        "color",
+        "response",
+        "rlen",
+        "hex(response)",
+    ]
+    assert table.numeric == {
+        "amount",
+        "min(id)",
+        "max(id)",
+        "min(glitch_delay)",
+        "max(glitch_delay)",
+        "min(normal_voltage)",
+        "max(normal_voltage)",
+        "min(sometimes)",
+        "max(sometimes)",
+    }
     page, count = rows(table)
     assert count == 2
     ok, fail = page
@@ -147,10 +187,13 @@ def test_filtering(dataset):
     page, count = rows(table, filters={"glitch_delay": {"filterType": "number", "type": "greaterThan", "filter": 15}})
     assert count == 3
     assert [row["id"] for row in page] == [2, 3, 4]
-    page, count = rows(table, filters={
-        "glitch_delay": {"filterType": "number", "type": "greaterThan", "filter": 15},
-        "response": {"filterType": "text", "type": "contains", "filter": "ok"},
-    })
+    page, count = rows(
+        table,
+        filters={
+            "glitch_delay": {"filterType": "number", "type": "greaterThan", "filter": 15},
+            "response": {"filterType": "text", "type": "contains", "filter": "ok"},
+        },
+    )
     assert [row["id"] for row in page] == [3, 4]
     # filter on hex
     page, count = rows(table, filters={"hex(response)": {"filterType": "text", "type": "startsWith", "filter": "46"}})
@@ -186,7 +229,9 @@ def test_response_filters_work_a_chunk_at_a_time(dataset, monkeypatch):
 
 def test_filtering_squeezed_min_max(dataset):
     table = build_table(dataset, dataset.base_colors, True, None, None)
-    page, count = rows(table, filters={"max(glitch_delay)": {"filterType": "number", "type": "greaterThanOrEqual", "filter": 40}})
+    page, count = rows(
+        table, filters={"max(glitch_delay)": {"filterType": "number", "type": "greaterThanOrEqual", "filter": 40}}
+    )
     assert [row["response"] for row in page] == ["OK"]
 
 
@@ -198,14 +243,17 @@ VALUES = pd.Series([1, 5, 10, None])
 TEXT = pd.Series(["Apple", "banana", "", None])
 
 
-@pytest.mark.parametrize("kind, value, expected", [
-    ("equals", 5, [False, True, False, False]),
-    ("notEqual", 5, [True, False, True, True]),
-    ("lessThan", 5, [True, False, False, False]),
-    ("lessThanOrEqual", 5, [True, True, False, False]),
-    ("greaterThan", 5, [False, False, True, False]),
-    ("greaterThanOrEqual", 5, [False, True, True, False]),
-])
+@pytest.mark.parametrize(
+    "kind, value, expected",
+    [
+        ("equals", 5, [False, True, False, False]),
+        ("notEqual", 5, [True, False, True, True]),
+        ("lessThan", 5, [True, False, False, False]),
+        ("lessThanOrEqual", 5, [True, True, False, False]),
+        ("greaterThan", 5, [False, False, True, False]),
+        ("greaterThanOrEqual", 5, [False, True, True, False]),
+    ],
+)
 def test_number_filters(kind, value, expected):
     assert list(grid_filter_mask(VALUES, {"filterType": "number", "type": kind, "filter": value})) == expected
 
@@ -215,14 +263,17 @@ def test_number_in_range():
     assert list(grid_filter_mask(VALUES, model)) == [False, True, True, False]
 
 
-@pytest.mark.parametrize("kind, value, expected", [
-    ("contains", "AN", [False, True, False, False]),
-    ("notContains", "an", [True, False, True, True]),
-    ("equals", "apple", [True, False, False, False]),
-    ("notEqual", "apple", [False, True, True, True]),
-    ("startsWith", "ba", [False, True, False, False]),
-    ("endsWith", "LE", [True, False, False, False]),
-])
+@pytest.mark.parametrize(
+    "kind, value, expected",
+    [
+        ("contains", "AN", [False, True, False, False]),
+        ("notContains", "an", [True, False, True, True]),
+        ("equals", "apple", [True, False, False, False]),
+        ("notEqual", "apple", [False, True, True, True]),
+        ("startsWith", "ba", [False, True, False, False]),
+        ("endsWith", "LE", [True, False, False, False]),
+    ],
+)
 def test_text_filters(kind, value, expected):
     assert list(grid_filter_mask(TEXT, {"filterType": "text", "type": kind, "filter": value})) == expected
 

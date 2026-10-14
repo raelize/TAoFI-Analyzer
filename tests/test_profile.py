@@ -11,6 +11,7 @@ A size the analyzer refuses to load (not enough memory) is skipped, as is
 generating one without enough disk space.
 "memory" is the largest the test process got so far (the sizes go up).
 """
+
 import os
 import random
 import resource
@@ -78,8 +79,11 @@ def summary(request):
     if not RESULTS:
         return
     steps = list(RESULTS[0][1])
-    lines = ["", f"load times in seconds (responses of {RESPONSE_SIZE} bytes)",
-             f"{'experiments':>12}" + "".join(f"{step:>14}" for step in steps)]
+    lines = [
+        "",
+        f"load times in seconds (responses of {RESPONSE_SIZE} bytes)",
+        f"{'experiments':>12}" + "".join(f"{step:>14}" for step in steps),
+    ]
     for experiments, timings in RESULTS:
         lines.append(f"{experiments:>12}" + "".join(f"{timings.get(step, ''):>14}" for step in steps))
     request.config.pluginmanager.get_plugin("terminalreporter").write_line("\n".join(lines))
@@ -122,8 +126,12 @@ def test_open_database(experiments, directory, request_from, capsys):
         # every graph type: drawn, and as sent to the browser
         for graph in GRAPHS:
             config.graph = graph
-            figure = step(graph, lambda: GRAPHS[graph](config.x, config.y, config.fixgreen, dataset, config,
-                                                       COLORS, *regexes, *[None] * len(COLORS)))
+            figure = step(
+                graph,
+                lambda: GRAPHS[graph](
+                    config.x, config.y, config.fixgreen, dataset, config, COLORS, *regexes, *[None] * len(COLORS)
+                ),
+            )
             step(f"{graph} json", lambda: plotly.io.to_json(figure))
         config.graph = "scatter"
         # the data tab: the table and its first page, squeezed (default) and not
@@ -133,7 +141,10 @@ def test_open_database(experiments, directory, request_from, capsys):
         rows, count = step("data all page", lambda: table.page(0, 100, [], {}))
         assert count == experiments
         # the grid's filter on the response column decodes all responses
-        step("data filter", lambda: table.page(0, 100, [], {"response": {"filterType": "text", "type": "contains", "filter": "x"}}))
+        step(
+            "data filter",
+            lambda: table.page(0, 100, [], {"response": {"filterType": "text", "type": "contains", "filter": "x"}}),
+        )
         # again (e.g. another browser tab): from the cache
         step("load cached", lambda: get_dataset(config))
     timings["memory (MB)"] = str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024)

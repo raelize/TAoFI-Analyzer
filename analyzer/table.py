@@ -1,4 +1,5 @@
 """The rows of the data tab: squeezing, filtering, sorting and paging."""
+
 import threading
 from collections import OrderedDict
 
@@ -86,8 +87,8 @@ class Table:
         codes, uniques = self.distinct_responses()
         mask = np.empty(len(uniques), dtype=bool)
         for start in range(0, len(uniques), _FILTER_CHUNK):
-            chunk = pd.Series([convert(r) for r in uniques[start:start + _FILTER_CHUNK]], dtype=object)
-            mask[start:start + len(chunk)] = grid_filter_mask(chunk, model)
+            chunk = pd.Series([convert(r) for r in uniques[start : start + _FILTER_CHUNK]], dtype=object)
+            mask[start : start + len(chunk)] = grid_filter_mask(chunk, model)
         return mask[codes]
 
     def column(self, name):
@@ -123,9 +124,7 @@ class Table:
         indices = np.flatnonzero(mask)
 
         if sort_model:
-            frame = pd.DataFrame(
-                {s["colId"]: self.column(s["colId"]).to_numpy()[indices] for s in sort_model}
-            )
+            frame = pd.DataFrame({s["colId"]: self.column(s["colId"]).to_numpy()[indices] for s in sort_model})
             order = frame.sort_values(
                 by=[s["colId"] for s in sort_model],
                 ascending=[s["sort"] == "asc" for s in sort_model],
@@ -270,8 +269,14 @@ def build_table(dataset, colors, squeeze_records, response_s, response_e, rows=N
 def get_table(dataset, config, squeeze_records, response_s, response_e, selection=None):
     """Cached table for the data tab, colored as the graph for ``config``; only the
     experiments of ``selection`` (see selection.py) if it applies."""
-    key = (dataset.key, Dataset.color_setting(config), bool(squeeze_records), response_s, response_e,
-           selection_key(selection) if applies(selection, config) else None)
+    key = (
+        dataset.key,
+        Dataset.color_setting(config),
+        bool(squeeze_records),
+        response_s,
+        response_e,
+        selection_key(selection) if applies(selection, config) else None,
+    )
     with _CACHE_LOCK:
         table = _TABLE_CACHE.get(key)
         if table is not None:

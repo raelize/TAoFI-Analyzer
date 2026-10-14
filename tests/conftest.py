@@ -1,4 +1,5 @@
 """Shared fixtures: test databases, the app and a client for its callbacks."""
+
 import importlib
 import os
 import socket
@@ -46,7 +47,12 @@ def create_database(path, columns, rows=(), argv=None, wal=False):
 def make_database(tmp_path):
     """Factory for test databases in a temporary directory; returns the file name."""
 
-    def make(name="test.sqlite", columns="id integer, delay integer, length integer, color text, response blob", rows=(), **kwargs):
+    def make(
+        name="test.sqlite",
+        columns="id integer, delay integer, length integer, color text, response blob",
+        rows=(),
+        **kwargs,
+    ):
         create_database(str(tmp_path / name), columns, rows, **kwargs).close()
         return name
 
