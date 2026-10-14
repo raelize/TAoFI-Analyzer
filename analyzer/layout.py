@@ -185,7 +185,8 @@ def graph_tab(config, refresh):
                             disabled=not local,
                             placeholder="directory with databases (press enter to apply)",
                         ),
-                        dbc.Button("Browse…", id="directory-browse", n_clicks=0, color="secondary", disabled=not local),
+                        # (a plain button, like Update)
+                        html.Button("Browse…", id="directory-browse", n_clicks=0, disabled=not local),
                     ],
                     className="mb-2",
                 ),
