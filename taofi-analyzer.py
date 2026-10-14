@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import logging
 import os
 import sys
 import tomllib
@@ -64,6 +65,13 @@ def setup(directory, database=None, x=None, y=None):
     create_layout(app)
 
 
+def without_development_server_warning(record):
+    """Logging filter: removes werkzeug's "This is a development server" warning (keeps the rest)."""
+    if isinstance(record.msg, str) and "This is a development server" in record.msg:
+        record.msg = "\n".join(line for line in record.msg.splitlines() if "This is a development server" not in line)
+    return True
+
+
 #
 # Main
 #
@@ -88,6 +96,9 @@ if __name__ == "__main__":
 
     setup(args.directory, args.database, args.x, args.y)
 
+    # the built-in server is meant for a single (local) user; gunicorn is
+    # documented for anything else, so leave out werkzeug's reminder of that
+    logging.getLogger("werkzeug").addFilter(without_development_server_warning)
     app.run(host=args.ip, port=args.port, debug=args.debug)
 else:
     # this path is taken when started with e.g. gunicorn, configured via the environment
