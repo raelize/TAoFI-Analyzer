@@ -30,7 +30,7 @@ def test_command_line():
     port = free_port()
     arguments = [f"--{axis}={value}" for axis, value in AXES.items()]
     process = subprocess.Popen([sys.executable, "taofi-analyzer.py", EXAMPLE_DIRECTORY, "--port", str(port),
-                                "--database", EXAMPLE_DATABASE, *arguments], cwd=REPO,
+                                "--database", EXAMPLE_DATABASE, "--graph", "scatter2", *arguments], cwd=REPO,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(100):
@@ -43,16 +43,35 @@ def test_command_line():
     finally:
         process.terminate()
         process.wait()
-    assert store["database"] == EXAMPLE_DATABASE
+    assert (store["database"], store["graph"]) == (EXAMPLE_DATABASE, "scatter2")
     assert {axis: store[axis] for axis in AXES} == AXES
+
+
+def run_with(environment):
+    """The initial config-store when started with ``environment`` (as gunicorn does)."""
+    script = "import importlib, json; from dataclasses import asdict; importlib.import_module('taofi-analyzer'); " \
+             "from analyzer.config import server_config; print(json.dumps(asdict(server_config)))"
+    environment = dict(os.environ, ANALYZER_DIRECTORY=EXAMPLE_DIRECTORY, **environment)
+    return subprocess.run([sys.executable, "-c", script], cwd=REPO, env=environment, capture_output=True, text=True)
 
 
 def test_environment():
-    environment = dict(os.environ, ANALYZER_DIRECTORY=EXAMPLE_DIRECTORY, ANALYZER_DATABASE=EXAMPLE_DATABASE,
-                       **{f"ANALYZER_{axis.upper()}": value for axis, value in AXES.items()})
-    script = "import importlib, json; from dataclasses import asdict; importlib.import_module('taofi-analyzer'); " \
-             "from analyzer.config import server_config; print(json.dumps(asdict(server_config)))"
-    output = subprocess.run([sys.executable, "-c", script], cwd=REPO, env=environment, capture_output=True, text=True, check=True)
+    output = run_with({"ANALYZER_DATABASE": EXAMPLE_DATABASE, "ANALYZER_GRAPH": "3d",
+                       **{f"ANALYZER_{axis.upper()}": value for axis, value in AXES.items()}})
+    assert output.returncode == 0, output.stderr
     store = json.loads(output.stdout.strip().splitlines()[-1])
-    assert store["database"] == EXAMPLE_DATABASE
+    assert (store["database"], store["graph"]) == (EXAMPLE_DATABASE, "3d")
     assert {axis: store[axis] for axis in AXES} == AXES
+
+
+def test_defaults():
+    output = run_with({})
+    store = json.loads(output.stdout.strip().splitlines()[-1])
+    assert store["graph"] == "scatter"
+    assert {axis: store[axis] for axis in AXES} == dict.fromkeys(AXES)
+
+
+def test_unknown_graph_type():
+    output = run_with({"ANALYZER_GRAPH": "nope"})
+    assert output.returncode != 0
+    assert "Unknown graph type 'nope' (choose from scatter, scatter2, 3d, mega)" in output.stderr

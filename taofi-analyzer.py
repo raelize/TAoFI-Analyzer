@@ -9,7 +9,7 @@ from dash import Dash
 
 from analyzer.callbacks import register_callbacks
 from analyzer.config import server_config
-from analyzer.graphs import AXES
+from analyzer.graphs import AXES, GRAPHS
 from analyzer.layout import create_layout
 
 #
@@ -61,14 +61,18 @@ AXIS_HELP = {
 }
 
 
-def setup(directory, database=None, **axes):
+def setup(directory, database=None, graph=None, **axes):
     """Configure the analyzer (directory and presets) and create its page."""
     directory = os.path.abspath(directory)
     if not os.path.isdir(directory):
         raise FileNotFoundError(f"Directory {directory} does not exist.")
+    if graph is not None and graph not in GRAPHS:
+        raise ValueError(f"Unknown graph type {graph!r} (choose from {', '.join(GRAPHS)})")
 
     server_config.directory = directory
     server_config.database = database
+    if graph is not None:
+        server_config.graph = graph
     for axis in AXES:
         setattr(server_config, axis, axes.get(axis))
 
@@ -98,6 +102,7 @@ if __name__ == "__main__":
     for axis in AXES:
         parser.add_argument(f"--{axis}", required=False, help=AXIS_HELP[axis])
     parser.add_argument("--database", required=False, help="Preset the database")
+    parser.add_argument("--graph", required=False, choices=list(GRAPHS), help="Preset the graph type")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {PROJECT_METADATA['version']}"
@@ -105,7 +110,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    setup(args.directory, args.database, **{axis: getattr(args, axis) for axis in AXES})
+    setup(args.directory, args.database, args.graph, **{axis: getattr(args, axis) for axis in AXES})
 
     # the built-in server is meant for a single (local) user; gunicorn is
     # documented for anything else, so leave out werkzeug's reminder of that
@@ -119,6 +124,7 @@ else:
     setup(
         os.environ["ANALYZER_DIRECTORY"],
         os.environ.get("ANALYZER_DATABASE"),
+        os.environ.get("ANALYZER_GRAPH"),
         **{axis: os.environ.get(f"ANALYZER_{axis.upper()}") for axis in AXES},
     )
 
