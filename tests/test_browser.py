@@ -132,6 +132,25 @@ def test_zoom_survives_redrawing(page):
     page.wait_for_function("document.querySelector('#points').innerText.includes('delay: 1100 – 1500')", timeout=10000)
 
 
+def legend_title(page):
+    return page.evaluate(f"{PLOT}.layout.legend.title.text")
+
+
+def test_enter_applies_the_text_fields(page):
+    assert legend_title(page) == "Classification ( 6,843 ):"
+    page.fill("#query-input", "delay > 1900")
+    page.press("#query-input", "Enter")
+    page.wait_for_function(f"{PLOT}.layout.legend.title.text !== 'Classification ( 6,843 ):'", timeout=10000)
+    page.fill("#recolor-red", "^")
+    page.fill("#recolor-red-label", "everything")
+    page.press("#recolor-red-label", "Enter")
+    page.wait_for_function(f"{PLOT}.data.some((trace) => trace.name.startsWith('everything'))", timeout=10000)
+    # after a reload the fields are as they were, and applied
+    page.reload()
+    page.wait_for_function(f"{GRAPH_READY} && {PLOT}.data.some((trace) => trace.name.startsWith('everything'))", timeout=20000)
+    assert legend_title(page) != "Classification ( 6,843 ):"
+
+
 def test_data_tab(page):
     open_tab(page, "Data")
     page.wait_for_selector(".ag-row", timeout=20000)

@@ -19,6 +19,9 @@ from analyzer.timing import register_timing, timed
 from analyzer.graphs import GRAPH_AXES, GRAPHS
 from analyzer.graphs.common import message_figure
 
+# the text fields of the graph tab; applied by Update or enter (see update_store())
+TEXT_FIELDS = ["query-input", "jitter-input"] + [f"recolor-{color}" for color in COLORS] + [f"recolor-{color}-label" for color in COLORS]
+
 _PAGE_SIZE = 100
 _MAX_ROWS = 1000  # per request of the data grid
 
@@ -181,30 +184,36 @@ def register_callbacks(app):
 
     # callback for updating store
     @app.callback(
-        Output("config-store", "data"),
-        Output("database-dropdown", "value"),
-        Output("x-dropdown", "value"),
-        Output("y-dropdown", "value"),
-        Output("z-dropdown", "value"),
-        [
-            Input("update-button", "n_clicks"),
-            Input("database-dropdown", "value"),
-            Input("x-dropdown", "value"),
-            Input("y-dropdown", "value"),
-            Input("z-dropdown", "value"),
-            Input("refresh-timer", "n_intervals"),
-            Input("switch-fixgreen", "value"),
-            Input("graph-dropdown", "value"),
-            Input("directory-input", "value"),
+        output=[
+            Output("config-store", "data"),
+            Output("database-dropdown", "value"),
+            Output("x-dropdown", "value"),
+            Output("y-dropdown", "value"),
+            Output("z-dropdown", "value"),
         ],
-        State("query-input", "value"),
-        State("config-store", "data"),
-        State("jitter-input", "value"),
-        [State(f"recolor-{color}", "value") for color in COLORS]
-        + [State(f"recolor-{color}-label", "value") for color in COLORS],
+        inputs=dict(
+            update=Input("update-button", "n_clicks"),
+            database=Input("database-dropdown", "value"),
+            x=Input("x-dropdown", "value"),
+            y=Input("y-dropdown", "value"),
+            z=Input("z-dropdown", "value"),
+            n_intervals=Input("refresh-timer", "n_intervals"),
+            fixgreen=Input("switch-fixgreen", "value"),
+            graph=Input("graph-dropdown", "value"),
+            directory=Input("directory-input", "value"),
+            # enter in one of the text fields applies them (like Update)
+            submits=[Input(field, "n_submit") for field in TEXT_FIELDS],
+        ),
+        state=dict(
+            query=State("query-input", "value"),
+            store=State("config-store", "data"),
+            jitter=State("jitter-input", "value"),
+            regexes=[State(f"recolor-{color}", "value") for color in COLORS],
+            labels=[State(f"recolor-{color}-label", "value") for color in COLORS],
+        ),
     )
-    # def update_store(nr_of_clicks, contents, query, database, x, y, store, *color_states):
-    def update_store(nr_of_clicks, database, x, y, z, n_intervals, fixgreen, graph, directory, query, store, jitter, *color_states):
+    def update_store(update, database, x, y, z, n_intervals, fixgreen, graph, directory, submits,
+                     query, store, jitter, regexes, labels):
         config = AnalyzerConfig.from_store(store)
 
         directory = data_directory(directory)
@@ -239,15 +248,18 @@ def register_callbacks(app):
         config.x = x
         config.y = y
         config.z = z
-        config.jitter = jitter
-        config.query = query
         config.fixgreen = fixgreen
         config.graph = graph
         config.argv = get_argv(path)
 
-        # Update color in config
-        for color, regex, label in zip(COLORS, color_states[:8], color_states[8:]):
-            config.colors[color] = [regex, label]
+        # the text fields only with Update or enter (or when the graph tab is
+        # shown): not e.g. a query that is still being typed at an auto refresh
+        triggered = ctx.triggered_id
+        if triggered is None or triggered == "update-button" or triggered in TEXT_FIELDS:
+            config.query = query
+            config.jitter = jitter
+            for color, regex, label in zip(COLORS, regexes, labels):
+                config.colors[color] = [regex, label]
 
         return asdict(config), config.database, config.x, config.y, config.z
 

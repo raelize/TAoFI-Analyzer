@@ -12,9 +12,11 @@ The graph tab is created from the data read from the database with FI experiment
 
 Select a database from the directory shown at the top. When the analyzer runs on your own machine you can switch to another directory: type it (press enter) or use `Browse…`. Files that are not analyzer databases are listed, but can't be selected.
 
-With `Auto refresh` the graph is updated when the database changes (e.g., while experiments are still running).
+With `Auto refresh` the graph is updated when the database changes (e.g., while experiments are still running). The zoom and the colors hidden via the legend are kept.
 
 You can filter the database before it's fed into the graph engine by extending the query at the top.
+
+The query, jitter and recolor fields are applied with `Update` or by pressing enter in one of them.
 
 Some examples include:
 

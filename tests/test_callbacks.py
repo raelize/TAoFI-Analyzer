@@ -179,6 +179,45 @@ def test_auto_refresh_only_when_the_database_changed(client, tmp_path, make_data
     assert code == 200
 
 
+def test_auto_refresh_keeps_the_applied_text_fields(client, tmp_path, make_database):
+    """A query (or recolor regex) that is still being typed isn't applied by an auto refresh."""
+    make_database(rows=[(1, 1, 1, "G", b"x")])
+    _, response = select(client, client.layout_store(), database=None, directory=str(tmp_path), trigger="directory-input.value")
+    _, response = select(client, response["config-store"]["data"], database="test.sqlite", directory=str(tmp_path),
+                         query="delay > 0", recolor={"red": "x"})
+    store = response["config-store"]["data"]
+    append(tmp_path / "test.sqlite")
+    _, response = select(client, store, database="test.sqlite", directory=str(tmp_path), trigger="refresh-timer.n_intervals",
+                         query="delay > ", recolor={"red": "("})
+    refreshed = response["config-store"]["data"]
+    assert refreshed["dbkey"] != store["dbkey"]
+    assert (refreshed["query"], refreshed["colors"]["red"][0]) == ("delay > 0", "x")
+
+
+@pytest.mark.parametrize("trigger, applied", [
+    ("update-button.n_clicks", True),
+    ("query-input.n_submit", True),
+    ("recolor-red.n_submit", True),
+    ("jitter-input.n_submit", True),
+    (None, True),  # the graph tab is shown (e.g. after a reload, with the fields as they were)
+    ("x-dropdown.value", False),
+    ("graph-dropdown.value", False),
+])
+def test_text_fields_are_applied_with_update_or_enter(client, store, trigger, applied):
+    _, response = select(client, store, trigger=trigger, x="id", query="delay > 1", recolor={"red": "x"})
+    new = response["config-store"]["data"]
+    assert new["x"] == "id"
+    assert (new["query"] == "delay > 1") is applied
+    assert (new["colors"]["red"][0] == "x") is applied
+
+
+def append(path):
+    con = sqlite3.connect(path)
+    con.execute("INSERT INTO experiments VALUES (2, 2, 2, 'R', x'00')")
+    con.commit()
+    con.close()
+
+
 #
 # graph
 #
