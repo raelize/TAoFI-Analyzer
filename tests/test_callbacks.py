@@ -251,6 +251,15 @@ def test_recolored_graph(client):
     assert legend(response)[-1] == "^ ( 3839 / 56.1% )"
 
 
+def test_graph_keeps_its_zoom(client, store):
+    def revision(store):
+        return graph(client, store)[1]["graph"]["figure"]["layout"]["uirevision"]
+
+    assert revision(store) == revision(dict(store, query="delay > 1", jitter=5, dbkey="new"))
+    assert revision(store) != revision(dict(store, y="id"))
+    assert revision(store) != revision(dict(store, graph="scatter2"))
+
+
 def test_graph_without_hover(client, store):
     code, response = graph(client, store, hover=False)
     assert response["graph"]["figure"]["layout"]["hovermode"] is False

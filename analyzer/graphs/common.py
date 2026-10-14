@@ -5,6 +5,7 @@ instead of a list of per-experiment dicts. Everything here works on numpy
 arrays so that a 500k-experiment database renders in well under a second.
 """
 import re
+import zlib
 
 import numpy as np
 import pandas as pd
@@ -68,10 +69,16 @@ def compact(values):
 
 
 def axis_values(dataset, column, jitter):
-    """Axis values for ``column`` with optional gaussian jitter (never mutates the dataset)."""
+    """Axis values for ``column`` with optional gaussian jitter (never mutates the dataset).
+
+    The jitter of an experiment stays the same when the graph is drawn again
+    (e.g. auto refresh): the same pseudo-random sequence per column every
+    time, and new experiments are added at the end.
+    """
     values = dataset.df[column].to_numpy()
     if jitter and values.dtype.kind in "iuf":
-        values = values + np.random.normal(0, jitter, len(values))
+        rng = np.random.default_rng(zlib.crc32(column.encode()))
+        values = values + jitter * rng.standard_normal(len(values))
     return values
 
 

@@ -10,3 +10,20 @@ def test_mega_graph_parameters(tmp_path, make_database, request_from):
         dataset = get_dataset(AnalyzerConfig(directory=str(tmp_path), database="test.sqlite"))
     # no id, text or empty columns
     assert parameters(dataset) == ["delay", "voltage"]
+
+
+def test_jitter_stays_the_same(tmp_path, make_database, request_from):
+    from analyzer.graphs.common import axis_values
+    from tests.test_dataset import append
+
+    make_database(rows=[(i, 100, 10, "G", b"x") for i in range(5)])
+    config = AnalyzerConfig(directory=str(tmp_path), database="test.sqlite")
+    with request_from("127.0.0.1"):
+        delay = axis_values(get_dataset(config), "delay", 2)
+        assert list(axis_values(get_dataset(config), "delay", 2)) == list(delay)
+        assert len(set(delay)) == 5
+        # (another sequence for another column)
+        assert list(axis_values(get_dataset(config), "length", 2) - 10) != list(delay - 100)
+        # new experiments: the others keep their jitter
+        append(config, [(5, 100, 10, "G", b"x")])
+        assert list(axis_values(get_dataset(config), "delay", 2)[:5]) == list(delay)

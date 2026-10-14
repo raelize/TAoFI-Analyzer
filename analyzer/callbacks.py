@@ -31,12 +31,17 @@ def register_callbacks(app):
     # zooms can't be merged into an outdated area
     app.clientside_callback(
         """
-        function (relayout, store) {
+        function (relayout, store, zoomed) {
             const triggered = dash_clientside.callback_context.triggered.map((t) => t.prop_id);
             const plot = document.querySelector("#graph .js-plotly-plot");
-            const twoAxes = store && !["3d", "mega"].includes(store.graph);
-            if (triggered.includes("config-store.data") || !plot || !plot.layout || !twoAxes) {
-                // another graph: nothing zoomed (yet); or not a graph of x against y
+            // the graph keeps its zoom while this stays the same (see graph_revision())
+            const revision = store ? [store.directory, store.database, store.x, store.y, store.z, store.graph].join("|") : null;
+            if (triggered.includes("config-store.data")) {
+                // e.g. auto refresh: still zoomed in the same graph; otherwise another graph, not zoomed
+                return zoomed && zoomed.revision === revision ? dash_clientside.no_update : null;
+            }
+            if (!plot || !plot.layout || ["3d", "mega"].includes(store && store.graph)) {
+                // not a graph of x against y
                 return null;
             }
             const zoom = {};
@@ -46,12 +51,13 @@ def register_callbacks(app):
                     zoom[axis] = layout.range.slice();
                 }
             }
-            return Object.keys(zoom).length ? zoom : null;
+            return Object.keys(zoom).length ? { ...zoom, revision: revision } : null;
         }
         """,
         Output("zoom-store", "data"),
         Input("graph", "relayoutData"),
         Input("config-store", "data"),
+        State("zoom-store", "data"),
         prevent_initial_call=True,
     )
 
@@ -311,6 +317,9 @@ def register_callbacks(app):
             if not hover:
                 # no hover lookups or hover labels at all (cheaper on huge plots)
                 result.update_layout(hovermode=False)
+            # keep the zoom and the colors hidden via the legend when the graph is
+            # drawn again (e.g. auto refresh, another query), but not for another graph
+            result.update_layout(uirevision=graph_revision(config))
             return result
         raise PreventUpdate
 
@@ -439,6 +448,11 @@ def register_callbacks(app):
             con.close()
 
         return df.to_string(index=False)
+
+
+def graph_revision(config):
+    """What makes it another graph (with its own zoom); the same in the zoom-store callback."""
+    return "|".join("" if v is None else str(v) for v in (config.directory, config.database, config.x, config.y, config.z, config.graph))
 
 
 def column_defs(table, wraptext, hidden):

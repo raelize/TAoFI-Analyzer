@@ -119,6 +119,19 @@ def test_zoom_reset(page):
     page.wait_for_function("document.querySelector('#points').innerText.includes('Zoom into the graph')", timeout=10000)
 
 
+def test_zoom_survives_redrawing(page):
+    page.evaluate(f"Plotly.relayout({PLOT}, {{'xaxis.range': [1100, 1500]}})")
+    page.wait_for_timeout(300)
+    # redrawn with the same database and axes (like auto refresh)
+    page.evaluate(f"window.redrawn = {PLOT}.data[0]")
+    page.click("#update-button")
+    page.wait_for_function(f"{PLOT}.data[0] !== window.redrawn", timeout=10000)
+    assert page.evaluate(f"{PLOT}.layout.xaxis.range") == [1100, 1500]
+    open_tab(page, "Information")
+    page.wait_for_selector("#points", state="attached")
+    page.wait_for_function("document.querySelector('#points').innerText.includes('delay: 1100 – 1500')", timeout=10000)
+
+
 def test_data_tab(page):
     open_tab(page, "Data")
     page.wait_for_selector(".ag-row", timeout=20000)
