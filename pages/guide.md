@@ -34,6 +34,8 @@ The graph types:
 - `3d`: the x, y and z parameters against each other; drag to rotate, scroll to zoom
 - `mega`: every parameter (number column, except `id`) against every other one, one plot per pair; the axes aren't used
 
+Click a point in the graph to see its experiment below the graph: all its columns, its response (as text and hex) and how many experiments have the same response. This needs `Show hover info on the graph` to be on.
+
 At the bottom of the graph you can recolor the experiments fed into the graph engine.
 
 The first field is the qualifier (i.e., `re.search(<qualifier>, response))`) and the second field is the label.

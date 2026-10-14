@@ -299,6 +299,40 @@ def test_graph_keeps_its_zoom(client, store):
     assert revision(store) != revision(dict(store, graph="scatter2"))
 
 
+def click(client, store, curve, point):
+    values = {"graph.clickData": {"points": [{"curveNumber": curve, "pointNumber": point}]}, "config-store.data": store}
+    return client.call("experiment.children", values, "graph.clickData")
+
+
+def text(node):
+    """All text in a (Dash JSON) component tree."""
+    if isinstance(node, dict):
+        return text(node.get("props", {}).get("children")) if "props" in node else " ".join(text(v) for v in node.values())
+    if isinstance(node, list):
+        return " ".join(text(child) for child in node)
+    return "" if node is None else str(node)
+
+
+def test_clicked_experiment(client, tmp_path, make_database):
+    make_database(rows=[(1, 10, 3, "G", b"ok"), (2, 20, 3, "R", b"crash\x00"), (3, 30, 3, "R", b"crash\x00"),
+                        (4, 40, 3, "Y", b"ok")])
+    # recolored: G (ids 1, 2, 3) and Y (id 4); the traces in COLOR_ORDER
+    store = dict(client.layout_store(), directory=str(tmp_path), database="test.sqlite", x="delay", y="length",
+                 colors={"green": ["crash", None]}, fixgreen=False)
+    code, response = click(client, store, 0, 1)
+    assert code == 200
+    shown = text(response["experiment"]["children"])
+    assert "id 2" in shown and "delay 20" in shown
+    assert "R (shown as G)" in shown
+    assert "6 bytes, the same for 2 of 4 experiments" in shown
+    assert "63 72 61 73 68 00" in shown
+    assert "id 4" in text(click(client, store, 1, 0)[1]["experiment"]["children"])
+    # e.g. a graph of before the database was loaded again
+    for curve, point in [(0, 3), (2, 0)]:
+        code, response = click(client, store, curve, point)
+        assert text(response["experiment"]["children"]) == "The database changed: click the point again."
+
+
 def test_graph_without_hover(client, store):
     code, response = graph(client, store, hover=False)
     assert response["graph"]["figure"]["layout"]["hovermode"] is False

@@ -151,6 +151,21 @@ def test_enter_applies_the_text_fields(page):
     assert legend_title(page) != "Classification ( 6,843 ):"
 
 
+def test_clicking_a_point(page):
+    # the pixel of the second point of the first trace
+    x, y = page.evaluate(f"""(() => {{
+        const layout = {PLOT}._fullLayout, trace = {PLOT}._fullData[0];
+        return [layout.xaxis.d2p(trace.x[1]) + layout.margin.l, layout.yaxis.d2p(trace.y[1]) + layout.margin.t];
+    }})()""")
+    box = page.locator("#graph .js-plotly-plot").bounding_box()
+    # scroll the point into view (the mouse can only click what is shown)
+    page.evaluate(f"window.scrollBy(0, {box['y'] + y - 600})")
+    box = page.locator("#graph .js-plotly-plot").bounding_box()
+    page.mouse.click(box["x"] + x, box["y"] + y)
+    page.wait_for_function("document.querySelector('#experiment').innerText.includes('the same for')", timeout=10000)
+    assert "delay" in page.inner_text("#experiment")
+
+
 def test_data_tab(page):
     open_tab(page, "Data")
     page.wait_for_selector(".ag-row", timeout=20000)

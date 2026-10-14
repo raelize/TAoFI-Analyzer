@@ -19,6 +19,8 @@ PAGE_STYLE = {"width": "80%", "border-style": "none", "margin": "0 auto"}
 
 LOADING = {"type": "circle", "delay_show": 150}
 
+EXPERIMENT_HINT = "Click a point in the graph to see its experiment."
+
 
 def create_layout(app):
     app.layout = html.Div(
@@ -193,6 +195,9 @@ def graph_tab(config):
         )
     )
 
+    # the experiment clicked in the graph (see show_experiment())
+    experiment = html.Div(EXPERIMENT_HINT, id="experiment", className="text-muted m-2")
+
     recolor = dbc.Card(
         dbc.CardBody(
             [
@@ -239,7 +244,7 @@ def graph_tab(config):
         )
     )
 
-    return [query, selection, graph, recolor]
+    return [query, selection, graph, experiment, recolor]
 
 
 def directory_browser():

@@ -17,7 +17,7 @@ from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
 from analyzer.timing import register_timing, timed
 from analyzer.graphs import GRAPH_AXES, GRAPHS
-from analyzer.graphs.common import message_figure
+from analyzer.graphs.common import clicked_experiment, message_figure
 
 # the text fields of the graph tab; applied by Update or enter (see update_store())
 TEXT_FIELDS = ["query-input", "jitter-input"] + [f"recolor-{color}" for color in COLORS] + [f"recolor-{color}-label" for color in COLORS]
@@ -335,6 +335,30 @@ def register_callbacks(app):
             return result
         raise PreventUpdate
 
+    # callback for the experiment clicked in the graph
+    @app.callback(
+        Output("experiment", "children"),
+        Input("graph", "clickData"),
+        State("config-store", "data"),
+        prevent_initial_call=True,
+    )
+    def show_experiment(click, store):
+        points = (click or {}).get("points") or []
+        if not points or not isinstance(points[0].get("pointNumber"), int):
+            raise PreventUpdate
+
+        config = AnalyzerConfig.from_store(store)
+        try:
+            dataset = get_dataset(config)
+        except DatasetError as e:
+            return html.Div(str(e), className="text-danger")
+        # the traces are the colors of the graph, see color_traces()
+        index = clicked_experiment(dataset.colors_for(config), points[0].get("curveNumber", 0), points[0]["pointNumber"])
+        if index is None:
+            # (the database was loaded again in the meantime)
+            return "The database changed: click the point again."
+        return experiment_card(dataset, config, index)
+
     # callback data; chained from update_graph()
     @app.callback(
         Output("data", "children"),
@@ -460,6 +484,43 @@ def register_callbacks(app):
             con.close()
 
         return df.to_string(index=False)
+
+
+def experiment_card(dataset, config, index):
+    """All columns of an experiment, its response (as text and hex) and how many experiments share it."""
+    row = dataset.df.iloc[index]
+    response = row["response"]
+    shown = dataset.colors_for(config)[index]
+    same = int((dataset.resp_codes == dataset.resp_codes[index]).sum())
+
+    values = []
+    for column, value in row.items():
+        if column == "response":
+            continue
+        if isinstance(value, bytes):
+            value = value.hex(" ")
+        if column == "color" and shown != value:
+            value = f"{value} (shown as {shown})"
+        values.append(html.Tr([html.Th(column, className="pe-3"), html.Td("" if pd.isna(value) else str(value))]))
+    values.append(html.Tr([html.Th("response", className="pe-3"),
+                           html.Td(f"{len(response)} bytes, the same for {same} of {len(dataset.df)} experiments")]))
+
+    def block(text, **style):
+        return html.Pre(text, style={"whiteSpace": "pre-wrap", "wordBreak": "break-all", "maxHeight": "300px", **style},
+                        className="border rounded p-2 mb-2")
+
+    return dbc.Card(
+        [
+            dbc.CardHeader("Experiment"),
+            dbc.CardBody(
+                [
+                    html.Table(html.Tbody(values), className="mb-2"),
+                    block(response.decode("utf-8", errors="replace")),
+                    block(response.hex(" "), fontFamily="monospace"),
+                ]
+            ),
+        ]
+    )
 
 
 def graph_revision(config):

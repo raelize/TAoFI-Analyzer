@@ -1,6 +1,6 @@
 import plotly.graph_objects as go
 
-from analyzer.graphs.common import (COLOR_CODES, COLOR_MAP, COLOR_ORDER, RECOLOR_FLAGS, axis_values, color_masks,
+from analyzer.graphs.common import (COLOR_CODES, COLOR_MAP, RECOLOR_FLAGS, axis_values, color_traces,
                                     compact, legend_labels, message_figure, update_legend_labels)
 
 # columns that aren't parameters of the experiments
@@ -28,13 +28,9 @@ def mega_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
 
     colors = dataset.recolor(color_values, COLOR_CODES, fixgreen, RECOLOR_FLAGS["mega"])
     values = {column: axis_values(dataset, column, config.jitter) for column in columns}
-    masks = color_masks(colors)
 
     fig = go.Figure()
-    for code in COLOR_ORDER:
-        mask = masks.get(code)
-        if mask is None:
-            continue
+    for code, mask in color_traces(colors):
         fig.add_trace(
             go.Splom(
                 dimensions=[{"label": column, "values": compact(values[column][mask])} for column in columns],

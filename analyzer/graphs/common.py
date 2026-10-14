@@ -88,6 +88,21 @@ def color_masks(colors):
     return {str(code): codes == index for index, code in enumerate(uniques)}
 
 
+def color_traces(colors):
+    """(color code, mask) of the traces of a graph, in their order (COLOR_ORDER, the codes present)."""
+    masks = color_masks(colors)
+    return [(code, masks[code]) for code in COLOR_ORDER if code in masks]
+
+
+def clicked_experiment(colors, curve, point):
+    """The experiment (row) of point ``point`` of trace ``curve``, or None (not in this graph)."""
+    traces = color_traces(colors)
+    if not 0 <= curve < len(traces):
+        return None
+    rows = np.flatnonzero(traces[curve][1])
+    return int(rows[point]) if 0 <= point < len(rows) else None
+
+
 def count_colors(colors):
     counts = {code: 0 for code in COLOR_ORDER}
     for code, mask in color_masks(colors).items():
@@ -100,12 +115,8 @@ def build_scatter(dataset, x, y, colors, jitter, labels=None):
     labels = labels or {}
     xv = axis_values(dataset, x, jitter)
     yv = axis_values(dataset, y, jitter)
-    masks = color_masks(colors)
     fig = go.Figure()
-    for code in COLOR_ORDER:
-        mask = masks.get(code)
-        if mask is None:
-            continue
+    for code, mask in color_traces(colors):
         fig.add_trace(
             go.Scattergl(
                 x=compact(xv[mask]),
