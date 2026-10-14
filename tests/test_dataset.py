@@ -1,12 +1,16 @@
+import os
 import re
+import sqlite3
 
 import numpy as np
 import pytest
 from dash.exceptions import PreventUpdate
 
+from analyzer import dataset as dataset_module
 from analyzer.config import AnalyzerConfig
 from analyzer.dataset import get_dataset
 from analyzer.graphs.common import COLOR_CODES
+from tests.conftest import create_database
 
 ROWS = [
     # id, delay, length, color, response
@@ -129,3 +133,72 @@ def test_empty_result(config):
     assert len(dataset.df) == 0
     assert list(dataset.colors_for(config)) == []
     assert isinstance(dataset.base_colors, np.ndarray)
+
+
+#
+# a database that is still being written to
+#
+
+
+@pytest.fixture
+def loads(monkeypatch):
+    """The rowids that databases were loaded from (0: all experiments)."""
+    calls = []
+    original = dataset_module.load_experiments
+
+    def load_experiments(path, query, after=0, responses=None):
+        calls.append(after)
+        return original(path, query, after, responses)
+
+    monkeypatch.setattr(dataset_module, "load_experiments", load_experiments)
+    return calls
+
+
+def append(config, rows):
+    con = sqlite3.connect(os.path.join(config.directory, config.database))
+    con.executemany("INSERT INTO experiments VALUES (?, ?, ?, ?, ?)", rows)
+    con.commit()
+    con.close()
+
+
+def test_new_experiments_are_added(config, loads):
+    dataset = get_dataset(config)
+    append(config, [(6, 60, 1, "R", b"ok"), (7, 70, 1, "G", b"new")])
+    grown = get_dataset(config)
+    assert loads == [0, 5]
+    assert list(grown.df["id"]) == [1, 2, 3, 4, 5, 6, 7]
+    assert list(grown.base_colors) == ["G", "Y", "Y", "M", "Y", "R", "G"]
+    assert grown.df["response"][5] is dataset.df["response"][0]
+    assert recolor(grown, R="new") == ["G", "Y", "Y", "M", "Y", "R", "R"]
+    # one version per database and query
+    assert list(dataset_module._DATASET_CACHE.values()) == [grown]
+
+
+def test_new_experiments_with_a_query(config, loads):
+    config.query = "color = 'R'"
+    get_dataset(config)
+    append(config, [(6, 60, 1, "R", b"a"), (7, 70, 1, "G", b"b"), (8, 80, 1, "R", b"c")])
+    assert list(get_dataset(config).df["id"]) == [6, 8]
+    append(config, [(9, 90, 1, "G", b"d")])
+    assert list(get_dataset(config).df["id"]) == [6, 8]
+    # (nothing matched at first, so the second load starts at the beginning as well)
+    assert loads == [0, 0, 8]
+
+
+def test_a_replaced_database_is_loaded_again(config, loads, tmp_path):
+    get_dataset(config)
+    create_database(str(tmp_path / "new.sqlite"), "id integer, delay integer, length integer, color text, response blob",
+                    [(i, i, 1, "G", b"x") for i in range(100, 108)]).close()
+    os.replace(tmp_path / "new.sqlite", tmp_path / "test.sqlite")
+    assert list(get_dataset(config).df["id"]) == list(range(100, 108))
+    assert loads == [0, 0]
+
+
+def test_removed_experiments_load_the_database_again(config, loads):
+    get_dataset(config)
+    con = sqlite3.connect(os.path.join(config.directory, config.database))
+    con.execute("DELETE FROM experiments WHERE id > 3")
+    con.commit()
+    con.close()
+    assert list(get_dataset(config).df["id"]) == [1, 2, 3]
+    assert loads == [0, 0]

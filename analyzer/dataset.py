@@ -8,14 +8,16 @@ import pandas as pd
 from dash.exceptions import PreventUpdate
 
 from analyzer.config import COLORS
-from analyzer.database import REQUIRED_COLUMNS, database_path, file_key, load_dataframe, query_error
+from analyzer.database import (REQUIRED_COLUMNS, appended_to, database_path, file_key, load_experiments, max_rowid,
+                               query_error)
 from analyzer.graphs.common import COLOR_CODES, RECOLOR_FLAGS
 
 class DatasetError(PreventUpdate):
     """A database that can't be shown (bad query, not enough memory, ...); the message is for the user."""
 
 
-# Loaded databases are cached per worker process.
+# Loaded databases are cached per worker process: (path, query) -> Dataset of
+# the latest version of the file.
 _DATASET_CACHE = OrderedDict()
 _DATASET_CACHE_SIZE = 3
 _CACHE_LOCK = threading.Lock()
@@ -29,9 +31,12 @@ class Dataset:
     unique responses; the resulting masks are cached per regex.
     """
 
-    def __init__(self, key, df):
+    def __init__(self, key, df, last_rowid=0):
+        # (file_key, query): changes with every new version of the file
         self.key = key
         self.df = df
+        # the rowid of the last experiment loaded, to load only newer ones later
+        self.last_rowid = last_rowid
         responses = df["response"]
         self.resp_codes, self.resp_uniques = pd.factorize(responses, use_na_sentinel=False)
         self.resp_uniques = np.asarray(self.resp_uniques, dtype=object)
@@ -110,35 +115,62 @@ class Dataset:
 
 
 def get_dataset(config):
-    """Cached, loaded database for the given database/query."""
+    """Cached, loaded database for the given database/query.
+
+    When the file only got new experiments since it was loaded (e.g. a running
+    glitch script), only those are loaded and added.
+    """
     path = database_path(config.directory, config.database)
     if path is None:
         raise PreventUpdate
 
-    key = file_key(path) + (config.query or "",)
+    query = config.query or ""
+    version = file_key(path)
+    key = version + (query,)
+    cache_key = (path, query)
 
     with _CACHE_LOCK:
-        dataset = _DATASET_CACHE.get(key)
+        dataset = _DATASET_CACHE.get(cache_key)
         if dataset is not None:
-            _DATASET_CACHE.move_to_end(key)
-            return dataset
+            _DATASET_CACHE.move_to_end(cache_key)
+            if dataset.key == key:
+                return dataset
 
     try:
-        df = load_dataframe(path, config.query or "")
+        if dataset is not None and appended_to(dataset.key[:-1], version) and max_rowid(path) >= dataset.last_rowid:
+            dataset = extended(dataset, key, path, query)
+        else:
+            # another file, or changed otherwise: the old version is of no use (free it first)
+            with _CACHE_LOCK:
+                _DATASET_CACHE.pop(cache_key, None)
+            dataset = None
+            df, last_rowid = load_experiments(path, query)
     except Exception as e:
         message = f"{config.database}: {query_error(e)}"
         print("ERROR (get_dataset): %s" % message)
         raise DatasetError(message)
 
-    missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
-    if missing:
-        message = f"{config.database} has no {', '.join(missing)} column"
-        print("ERROR (get_dataset): %s" % message)
-        raise DatasetError(message)
+    if dataset is None:
+        missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
+        if missing:
+            message = f"{config.database} has no {', '.join(missing)} column"
+            print("ERROR (get_dataset): %s" % message)
+            raise DatasetError(message)
+        dataset = Dataset(key, df, last_rowid)
 
-    dataset = Dataset(key, df)
     with _CACHE_LOCK:
-        _DATASET_CACHE[key] = dataset
+        _DATASET_CACHE[cache_key] = dataset
+        _DATASET_CACHE.move_to_end(cache_key)
         while len(_DATASET_CACHE) > _DATASET_CACHE_SIZE:
             _DATASET_CACHE.popitem(last=False)
     return dataset
+
+
+def extended(dataset, key, path, query):
+    """``dataset`` with the experiments added to the database since it was loaded."""
+    # new experiments share the responses already loaded
+    responses = {r: r for r in dataset.resp_uniques}
+    df, last_rowid = load_experiments(path, query, dataset.last_rowid, responses)
+    if df.empty:
+        return Dataset(key, dataset.df, dataset.last_rowid)
+    return Dataset(key, pd.concat([dataset.df, df], ignore_index=True), last_rowid)
