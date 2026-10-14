@@ -14,7 +14,7 @@ from dash_ag_grid import AgGrid
 
 from analyzer.config import COLORS, ROW_COLORS, AnalyzerConfig, server_config
 from analyzer.database import (counting, data_directory, database_path, file_key, get_argv, get_databases,
-                               get_parameters, is_local_request, list_directory, query_connection, query_error)
+                               get_parameters, is_local_request, list_directory, query_error, run_query)
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
 from analyzer.layout import axis_style
@@ -30,6 +30,7 @@ _PAGE_SIZE = 100
 _MAX_ROWS = 1000  # per request of the data grid
 # rows in a downloaded CSV file (a download is sent as one response)
 EXPORT_MAX_ROWS = 100_000
+QUERY_ROWS = 100  # rows of a query shown on the database tab
 
 
 def register_callbacks(app):
@@ -605,32 +606,61 @@ def register_callbacks(app):
         Input("where-input", "n_submit"),
         State("select-input", "value"),
         State("where-input", "value"),
-        State('config-store', 'data'),
-        prevent_initial_call=True
+        State("config-store", "data"),
+        prevent_initial_call=True,
     )
     @timed("query")
     def execute_query(n_clicks, n_submit1, n_submit2, select_cols, where_condition, data):
         path = database_path(data.get("directory"), data.get("database"))
         if path is None:
             return "ERROR: select a database on the Graph tab first"
-
-        con = query_connection(path)
-
-        if not where_condition:
-            query = f"SELECT {select_cols} FROM experiments"
-        else:
-            query = f"SELECT {select_cols} FROM experiments WHERE {where_condition}"
-
-        # Build query; only the first 100 rows are shown, so only fetch those
         try:
-            df = pd.read_sql(f"SELECT * FROM ({query}) LIMIT 100;", con)
+            df, count = run_query(path, select_cols or "*", where_condition, QUERY_ROWS)
         except Exception as e:
             print(e)
             return f"ERROR: {query_error(e)}"
-        finally:
-            con.close()
 
-        return df.to_string(index=False)
+        note = f"{count} rows" + (f"; the first {QUERY_ROWS} are shown" if count > QUERY_ROWS else "")
+        return [html.Div(note, className="mb-2"), query_grid(df)]
+
+    # callback for downloading the result of the query
+    @app.callback(
+        Output("query-download", "data"),
+        Output("query-download-note", "children"),
+        Input("query-download-button", "n_clicks"),
+        State("select-input", "value"),
+        State("where-input", "value"),
+        State("config-store", "data"),
+        prevent_initial_call=True,
+    )
+    def download_query(n_clicks, select_cols, where_condition, data):
+        path = database_path(data.get("directory"), data.get("database"))
+        if not n_clicks or path is None:
+            raise PreventUpdate
+        try:
+            df, count = run_query(path, select_cols or "*", where_condition, EXPORT_MAX_ROWS)
+        except Exception as e:
+            return no_update, f"ERROR: {query_error(e)}"
+        note = f"the first {EXPORT_MAX_ROWS} of {count} rows" if count > EXPORT_MAX_ROWS else f"{count} rows"
+        name = os.path.splitext(data["database"])[0] + "-query.csv"
+        return dcc.send_data_frame(df.to_csv, name, index=False), note
+
+
+def query_grid(df):
+    """The rows of a query of the database tab."""
+    return AgGrid(
+        columnDefs=[{"field": column, "headerName": column} for column in df.columns],
+        rowData=df.astype(object).where(df.notna(), None).to_dict("records"),
+        defaultColDef={"resizable": True, "sortable": True, "filter": True},
+        className="ag-theme-quartz",
+        dashGridOptions={
+            # (column names like "count(*)" or "a.b" are names, not paths)
+            "suppressFieldDotNotation": True,
+            "enableCellTextSelection": True,
+            "domLayout": "autoHeight",
+        },
+        columnSize="autoSize",
+    )
 
 
 def experiment_card(dataset, config, index):

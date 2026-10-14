@@ -70,10 +70,16 @@ def get_rows(client, store, grid_id, squeeze=False, start=0, end=100, sort=(), f
 
 
 def query(client, store, select_columns="count(*)", where=""):
+    """The result of a query of the database tab: an error, or (note, columns, rows)."""
     values = {"query-button.n_clicks": 1, "select-input.value": select_columns, "where-input.value": where, "config-store.data": store}
     code, response = client.call("query-output.children", values, "query-button.n_clicks")
     assert code == 200
-    return response["query-output"]["children"]
+    output = response["query-output"]["children"]
+    if isinstance(output, str):
+        return output
+    note, grid = output
+    props = grid["props"]
+    return note["props"]["children"], [c["field"] for c in props["columnDefs"]], props["rowData"]
 
 
 #
@@ -545,12 +551,32 @@ def test_column_defs():
 
 
 def test_query(client, store):
-    assert query(client, store).split() == ["count(*)", str(EXAMPLE_EXPERIMENTS)]
+    assert query(client, store) == ("1 rows", ["count(*)"], [{"count(*)": EXAMPLE_EXPERIMENTS}])
     con = sqlite3.connect(os.path.join(EXAMPLE_DIRECTORY, EXAMPLE_DATABASE))
-    expected = [str(i) for (i,) in con.execute("SELECT id FROM experiments WHERE instr(response, x'ff') AND id < 50")]
+    expected = [i for (i,) in con.execute("SELECT id FROM experiments WHERE instr(response, x'ff') AND id < 50")]
     con.close()
     assert len(expected) > 1
-    assert query(client, store, "id", "match_hex(response, 'ff') AND id < 50").split() == ["id"] + expected
+    note, columns, rows = query(client, store, "id", "match_hex(response, 'ff') AND id < 50")
+    assert [row["id"] for row in rows] == expected
+
+
+def test_query_shows_the_first_rows(client, store):
+    note, columns, rows = query(client, store, "id, response", "")
+    assert note == f"{EXAMPLE_EXPERIMENTS} rows; the first 100 are shown"
+    assert columns == ["id", "response"] and len(rows) == 100
+    # the response as text
+    assert isinstance(rows[0]["response"], str)
+
+
+def test_download_query(client, store):
+    values = {"query-download-button.n_clicks": 1, "select-input.value": "id, delay", "where-input.value": "id < 10",
+              "config-store.data": store}
+    code, response = client.call("query-download.data", values, "query-download-button.n_clicks")
+    download = response["query-download"]["data"]
+    assert download["filename"] == EXAMPLE_DATABASE.replace(".sqlite", "-query.csv")
+    lines = download["content"].splitlines()
+    assert lines[0] == "id,delay" and len(lines) == 11
+    assert response["query-download-note"]["children"] == "10 rows"
 
 
 def test_query_errors(client, store):

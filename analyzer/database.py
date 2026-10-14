@@ -291,6 +291,22 @@ def query_error(e):
     return str(e)
 
 
+def run_query(database_path, columns, where, limit):
+    """``SELECT columns FROM experiments [WHERE where]``: the first ``limit`` rows (a DataFrame)
+    and the number of rows; blobs (e.g. the response) as text."""
+    query = f"SELECT {columns} FROM experiments" + (f" WHERE {where}" if where else "")
+    con = query_connection(database_path)
+    try:
+        df = pd.read_sql(f"SELECT * FROM ({query}) LIMIT {int(limit)}", con)
+        count = con.execute(f"SELECT count(*) FROM ({query})").fetchone()[0]
+    finally:
+        con.close()
+    for column in df.columns:
+        if df[column].dtype == object:
+            df[column] = df[column].map(lambda v: v.decode("utf-8", errors="replace") if isinstance(v, bytes) else v)
+    return df, count
+
+
 def load_experiments(database_path, query, after=0, responses=None):
     """The experiments after rowid ``after`` matching ``query``: (DataFrame, last rowid).
 

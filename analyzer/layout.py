@@ -375,7 +375,7 @@ def database_tab(config, refresh):
             # all on one line
             html.Div(
                 [
-                    html.Span("SELECT ", style={"marginRight": "5px", "fontWeight": "bold"}),
+                    html.Span("SELECT ", style={"marginRight": "5px", "fontWeight": "bold"}, className="text-nowrap"),
                     dbc.Input(
                         id="select-input",
                         type="text",
@@ -383,21 +383,24 @@ def database_tab(config, refresh):
                         placeholder="columns",
                         style={"width": "150px", "display": "inline-block", "marginRight": "5px"},
                     ),
-                    html.Span(" FROM experiments WHERE ", style={"margin": "0 5px", "fontWeight": "bold"}),
+                    html.Span(" FROM experiments WHERE ", style={"margin": "0 5px", "fontWeight": "bold"}, className="text-nowrap"),
                     dbc.Input(
                         id="where-input",
                         type="text",
                         value="",
                         placeholder="",
-                        style={"width": "1200px", "display": "inline-block", "marginRight": "10px"},
+                        style={"flex": 1, "display": "inline-block", "marginRight": "10px"},
                     ),
                     dbc.Button("Execute", id="query-button", n_clicks=0, color="primary", style={"display": "inline-block"}),
+                    dbc.Button("Download CSV", id="query-download-button", n_clicks=0, color="secondary", className="ms-2 text-nowrap"),
+                    dcc.Download(id="query-download"),
                 ],
                 style={"display": "flex", "alignItems": "center"},
             ),
         )
     )
-    return [query, dcc.Loading(html.Pre(id="query-output"), **LOADING)]
+    note = html.Div(id="query-download-note", className="text-muted mt-1")
+    return [query, note, dcc.Loading(html.Div(id="query-output", className="mt-2"), **LOADING)]
 
 
 def guide_tab(config, refresh):
