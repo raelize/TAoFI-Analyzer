@@ -250,6 +250,18 @@ def test_load_experiments_in_chunks(tmp_path, make_database, monkeypatch):
     assert len(df) == 0 and list(df.columns)[0] == "id" and last == 0
 
 
+@pytest.mark.parametrize("query", ["1) OR (1", "color = 'R') OR (color = 'G'"])
+def test_a_query_cannot_escape_the_chunks(tmp_path, make_database, monkeypatch, query):
+    monkeypatch.setattr(database, "LOAD_CHUNK", 2)
+    make_database(rows=[(i, i, 3, "RG"[i % 2], b"x") for i in range(1, 8)])
+    with pytest.raises(ValueError, match="the query must be a condition"):
+        load_experiments(str(tmp_path / "test.sqlite"), query)
+    # loading only the new experiments
+    monkeypatch.setattr(database, "LOAD_CHUNK", 10)
+    with pytest.raises(ValueError, match="the query must be a condition"):
+        load_experiments(str(tmp_path / "test.sqlite"), query, 5)
+
+
 def test_writes_can_happen_while_loading(tmp_path, make_database, monkeypatch):
     """A glitch script writing to the database (rollback journal) gets the lock between chunks."""
     monkeypatch.setattr(database, "LOAD_CHUNK", 2)

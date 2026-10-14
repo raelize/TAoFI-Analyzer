@@ -265,6 +265,9 @@ def load_experiments(database_path, query, after=0, responses=None):
         values = [[] for _ in columns]
         response = columns.index("response") if "response" in columns else None
         while rows := cursor.fetchall():
+            if rows[0][0] <= last:
+                # e.g. "1) OR (1": not one condition, it escaped "rowid > ?" (and would load forever)
+                raise ValueError("the query must be a condition on the experiments (e.g. delay > 100)")
             last = rows[-1][0]
             for index, chunk in enumerate(list(zip(*rows))[1:]):
                 if index == response:
