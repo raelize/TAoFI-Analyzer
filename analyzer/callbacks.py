@@ -110,7 +110,7 @@ def register_callbacks(app):
         p = ""
         for axis in axes:
             if axis in zoom:
-                low, high = (f"{v:g}" if isinstance(v, (int, float)) else str(v) for v in zoom[axis])
+                low, high = (f"{v:g}" if isinstance(v, int | float) else str(v) for v in zoom[axis])
                 p += f"* {names[axis]}: {low} – {high}\n"
             else:
                 p += f"* {names[axis]}: (not zoomed)\n"
@@ -222,35 +222,35 @@ def register_callbacks(app):
 
     # callback for updating store
     @app.callback(
-        output=dict(
-            store=Output("config-store", "data"),
-            database=Output("database-dropdown", "value"),
-            axes=[Output(f"{axis}-dropdown", "value") for axis in AXES],
-            mega=Output("mega-dropdown", "value"),
-            applied=Output("applied-fields", "data"),
-            fields=[Output(field, "value") for field in TEXT_FIELDS],
-        ),
-        inputs=dict(
-            update=Input("update-button", "n_clicks"),
-            database=Input("database-dropdown", "value"),
-            axes=[Input(f"{axis}-dropdown", "value") for axis in AXES],
-            mega=Input("mega-dropdown", "value"),
-            n_intervals=Input("refresh-timer", "n_intervals"),
-            fixgreen=Input("switch-fixgreen", "value"),
-            graph=Input("graph-dropdown", "value"),
-            directory=Input("directory-input", "value"),
+        output={
+            "store": Output("config-store", "data"),
+            "database": Output("database-dropdown", "value"),
+            "axes": [Output(f"{axis}-dropdown", "value") for axis in AXES],
+            "mega": Output("mega-dropdown", "value"),
+            "applied": Output("applied-fields", "data"),
+            "fields": [Output(field, "value") for field in TEXT_FIELDS],
+        },
+        inputs={
+            "update": Input("update-button", "n_clicks"),
+            "database": Input("database-dropdown", "value"),
+            "axes": [Input(f"{axis}-dropdown", "value") for axis in AXES],
+            "mega": Input("mega-dropdown", "value"),
+            "n_intervals": Input("refresh-timer", "n_intervals"),
+            "fixgreen": Input("switch-fixgreen", "value"),
+            "graph": Input("graph-dropdown", "value"),
+            "directory": Input("directory-input", "value"),
             # enter in one of the text fields applies them (like Update)
-            submits=[Input(field, "n_submit") for field in TEXT_FIELDS],
-        ),
-        state=dict(
-            query=State("query-input", "value"),
-            store=State("config-store", "data"),
-            jitter=State("jitter-input", "value"),
-            max_points=State("max-points-input", "value"),
-            regexes=[State(f"recolor-{color}", "value") for color in COLORS],
-            labels=[State(f"recolor-{color}-label", "value") for color in COLORS],
-            applied=State("applied-fields", "data"),
-        ),
+            "submits": [Input(field, "n_submit") for field in TEXT_FIELDS],
+        },
+        state={
+            "query": State("query-input", "value"),
+            "store": State("config-store", "data"),
+            "jitter": State("jitter-input", "value"),
+            "max_points": State("max-points-input", "value"),
+            "regexes": [State(f"recolor-{color}", "value") for color in COLORS],
+            "labels": [State(f"recolor-{color}-label", "value") for color in COLORS],
+            "applied": State("applied-fields", "data"),
+        },
     )
     def update_store(
         update,

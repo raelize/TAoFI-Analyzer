@@ -161,7 +161,7 @@ def get_dataset(config):
         raise PreventUpdate
 
     query = config.query or ""
-    key = file_key(path) + (query,)
+    key = (*file_key(path), query)
     cache_key = (path, query)
 
     with _CACHE_LOCK:
@@ -175,7 +175,7 @@ def get_dataset(config):
     # ask for the same database at the same time, the second uses the first's
     with load_lock:
         # (the file may have changed while waiting)
-        key = file_key(path) + (query,)
+        key = (*file_key(path), query)
         with _CACHE_LOCK:
             dataset = _DATASET_CACHE.get(cache_key)
             if dataset is not None and dataset.key == key:
@@ -201,13 +201,13 @@ def load_dataset(config, path, query, key, dataset):
         df, last_rowid = with_free_memory(lambda: load_experiments(path, query))
     except Exception as e:
         message = f"{config.database}: {query_error(e)}"
-        print("ERROR (get_dataset): %s" % message)
+        print(f"ERROR (get_dataset): {message}")
         raise DatasetError(message)
 
     missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
     if missing:
         message = f"{config.database} has no {', '.join(missing)} column"
-        print("ERROR (get_dataset): %s" % message)
+        print(f"ERROR (get_dataset): {message}")
         raise DatasetError(message)
     return Dataset(key, df, last_rowid)
 

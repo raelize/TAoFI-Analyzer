@@ -308,7 +308,7 @@ def test_load_experiments_in_chunks(tmp_path, make_database, monkeypatch):
     assert list(df["id"]) == [6, 7] and last == 7
     # the last rowid read (not the last one matching): the next load starts after it
     df, last = load_experiments(path, "id > 100", 0)
-    assert len(df) == 0 and list(df.columns)[0] == "id" and last == 7
+    assert len(df) == 0 and next(iter(df.columns)) == "id" and last == 7
 
 
 @pytest.mark.parametrize("query", ["1) OR (1", "color = 'R') OR (color = 'G'"])

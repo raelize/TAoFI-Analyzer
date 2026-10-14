@@ -22,21 +22,21 @@ def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
         width=None,
         height=1000,
         autosize=True,
-        margin=dict(l=0, r=0, t=0, b=0),
-        legend=dict(
-            orientation="h",
-            itemsizing="constant",
-            yanchor="bottom",
-            y=-0.1,
-            xanchor="center",
-            x=0.5,
-            font=dict(size=15),
-            title=dict(
-                side="top",
-                text=classification(colors, shown),
-                font=dict(size=15),
-            ),
-        ),
+        margin={"l": 0, "r": 0, "t": 0, "b": 0},
+        legend={
+            "orientation": "h",
+            "itemsizing": "constant",
+            "yanchor": "bottom",
+            "y": -0.1,
+            "xanchor": "center",
+            "x": 0.5,
+            "font": {"size": 15},
+            "title": {
+                "side": "top",
+                "text": classification(colors, shown),
+                "font": {"size": 15},
+            },
+        },
     )
 
     if config.x == "x" or config.y == "y":

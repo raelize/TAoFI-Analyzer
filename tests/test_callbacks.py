@@ -227,7 +227,7 @@ def test_axis_lists(client, store):
 
 
 @pytest.mark.parametrize(
-    "graph_type, shown",
+    ("graph_type", "shown"),
     [
         ("scatter", ["x", "y"]),
         ("scatter2", ["x", "y", "x2", "y2"]),
@@ -367,7 +367,7 @@ def test_data_tab_auto_refresh(client, tmp_path, make_database):
 
 
 @pytest.mark.parametrize(
-    "trigger, applied",
+    ("trigger", "applied"),
     [
         ("update-button.n_clicks", True),
         ("query-input.n_submit", True),
@@ -487,7 +487,7 @@ def test_3d_graph(client):
 
 
 @pytest.mark.parametrize(
-    "graph_type, axes, message",
+    ("graph_type", "axes", "message"),
     [
         ("scatter", {"x": None}, "Select the x-axis to show the scatter graph"),
         ("3d", {}, "Select the z-axis to show the 3d graph"),

@@ -28,7 +28,7 @@ AXIS_LABELS = {
 # Recolor targets, in the order of the recolor input fields (green .. red).
 COLOR_CODES = ["G", "Y", "M", "O", "C", "B", "Z", "R"]
 # Legend/trace order (timeout first, as before).
-COLOR_ORDER = ["P"] + COLOR_CODES
+COLOR_ORDER = ["P", *COLOR_CODES]
 COLOR_MAP = {
     "P": "pink",
     "G": "green",

@@ -52,8 +52,8 @@ class Table:
     def columns(self):
         plain = list(self.df.columns)
         if self.squeezed:
-            return plain + ["response", "rlen", "hex(response)"]
-        return plain + ["rlen", "response", "hex(response)"]
+            return [*plain, "response", "rlen", "hex(response)"]
+        return [*plain, "rlen", "response", "hex(response)"]
 
     @staticmethod
     def decode(response):

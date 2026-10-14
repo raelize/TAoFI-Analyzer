@@ -178,7 +178,7 @@ def get_number_of_experiments(directory, database, background=False):
         _COUNT_CACHE[key[0]] = (key, count, last)
         return count
     except Exception as e:
-        print("ERROR (get_number_of_experiments): %s" % (e))
+        print(f"ERROR (get_number_of_experiments): {e}")
 
 
 def _count_in_background(database_path):
@@ -186,7 +186,7 @@ def _count_in_background(database_path):
         key = file_key(database_path)
         _COUNT_CACHE[key[0]] = (key, *count_experiments(database_path, key, _COUNT_CACHE.get(key[0])))
     except Exception as e:
-        print("ERROR (get_number_of_experiments): %s" % (e))
+        print(f"ERROR (get_number_of_experiments): {e}")
     finally:
         with _COUNT_LOCK:
             _COUNTING.discard(database_path)
@@ -224,25 +224,22 @@ def get_databases(directory):
 
 def get_argv(database_path):
     try:
-        with closing(connect(database_path)) as connection:
-            with closing(connection.cursor()) as cursor:
-                cursor.execute("SELECT argv FROM metadata")
-                argvstr = cursor.fetchone()[0]
-                return argvstr
+        with closing(connect(database_path)) as connection, closing(connection.cursor()) as cursor:
+            cursor.execute("SELECT argv FROM metadata")
+            return cursor.fetchone()[0]
     except Exception as e:
-        print("ERROR (get_argv): %s" % (e))
+        print(f"ERROR (get_argv): {e}")
 
 
 def get_parameters(database_path):
     try:
-        with closing(connect(database_path)) as connection:
-            with closing(connection.cursor()) as cursor:
-                cursor.execute("SELECT * FROM experiments")
-                parameters = list(next(zip(*cursor.description, strict=True)))
-                parameters.remove("response")
-                return parameters
+        with closing(connect(database_path)) as connection, closing(connection.cursor()) as cursor:
+            cursor.execute("SELECT * FROM experiments")
+            parameters = list(next(zip(*cursor.description, strict=True)))
+            parameters.remove("response")
+            return parameters
     except Exception as e:
-        print("ERROR (get_parameters): %s" % (e))
+        print(f"ERROR (get_parameters): {e}")
 
 
 # new function for sqlite3 query

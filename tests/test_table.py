@@ -244,7 +244,7 @@ TEXT = pd.Series(["Apple", "banana", "", None])
 
 
 @pytest.mark.parametrize(
-    "kind, value, expected",
+    ("kind", "value", "expected"),
     [
         ("equals", 5, [False, True, False, False]),
         ("notEqual", 5, [True, False, True, True]),
@@ -264,7 +264,7 @@ def test_number_in_range():
 
 
 @pytest.mark.parametrize(
-    "kind, value, expected",
+    ("kind", "value", "expected"),
     [
         ("contains", "AN", [False, True, False, False]),
         ("notContains", "an", [True, False, True, True]),

@@ -114,15 +114,13 @@ def test_bad_query(config):
 
 def test_database_without_response_column(tmp_path, make_database, request_from):
     make_database("no-response.sqlite", columns="id integer, delay integer, color text", rows=[(1, 2, "G")])
-    with request_from("127.0.0.1"):
-        with pytest.raises(PreventUpdate):
-            get_dataset(AnalyzerConfig(directory=str(tmp_path), database="no-response.sqlite"))
+    with request_from("127.0.0.1"), pytest.raises(PreventUpdate):
+        get_dataset(AnalyzerConfig(directory=str(tmp_path), database="no-response.sqlite"))
 
 
 def test_unknown_database(tmp_path, request_from):
-    with request_from("127.0.0.1"):
-        with pytest.raises(PreventUpdate):
-            get_dataset(AnalyzerConfig(directory=str(tmp_path), database="missing.sqlite"))
+    with request_from("127.0.0.1"), pytest.raises(PreventUpdate):
+        get_dataset(AnalyzerConfig(directory=str(tmp_path), database="missing.sqlite"))
 
 
 def test_empty_result(config):
