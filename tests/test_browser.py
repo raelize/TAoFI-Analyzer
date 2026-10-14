@@ -145,6 +145,15 @@ def test_selection_survives_tab_switches(page):
     assert EXAMPLE_DATABASE in page.inner_text("#database-dropdown")
 
 
+def test_timing_badge(page):
+    page.wait_for_function("document.querySelector('#timing').innerText.startsWith('server (')", timeout=10000)
+    page.wait_for_function("document.querySelector('#timing-label').innerText.trim() === 'graph:'", timeout=10000)
+    open_tab(page, "Data")
+    page.wait_for_selector(".ag-row", timeout=20000)
+    # the data table and its first page of rows together
+    page.wait_for_function("document.querySelector('#timing-label').innerText.trim() === 'data:'", timeout=10000)
+
+
 def test_stale_page_reloads(page):
     page.wait_for_load_state("networkidle")
     page.evaluate("window.marker = 1")

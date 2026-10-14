@@ -2,16 +2,16 @@
 import time
 from functools import wraps
 
-from dash import set_props
-
-_LAST_TIMING = {}
+from dash import Input, Output, State, set_props
 
 
 def timed(label, base=None):
     """Report how long a content-generating callback took in the header badge.
 
-    With ``base`` the badge also keeps showing the time of that earlier step,
-    e.g. the data table build next to the time of fetching one page of rows.
+    With ``base`` the badge adds the time of that earlier step when it came
+    right before, e.g. the data table build plus fetching its first page of
+    rows. That is done in the browser (see register_timing), so it only
+    combines the requests of the same page.
     """
 
     def decorator(func):
@@ -20,17 +20,37 @@ def timed(label, base=None):
             started = time.perf_counter()
             result = func(*args, **kwargs)
             elapsed = time.perf_counter() - started
-            _LAST_TIMING[label] = elapsed
-            shown = label
-            if base in _LAST_TIMING:
-                # e.g. the data table build plus the first page of rows
-                elapsed += _LAST_TIMING.pop(base)
-                shown = base
             # the client-side timer is filled in by assets/timing.js
-            set_props("timing-label", {"children": f"{shown}: "})
-            set_props("timing", {"children": f"server ({elapsed:.2f} s)"})
+            set_props("timing-store", {"data": {"label": label, "base": base, "elapsed": elapsed}})
             return result
 
         return wrapper
 
     return decorator
+
+
+def register_timing(app):
+    """Show the timings sent by timed() in the header badge."""
+    app.clientside_callback(
+        """
+        function (timing, previous) {
+            if (!timing) {
+                return [dash_clientside.no_update, dash_clientside.no_update, dash_clientside.no_update];
+            }
+            let label = timing.label;
+            let elapsed = timing.elapsed;
+            let last = timing;
+            if (timing.base && previous && previous.label === timing.base) {
+                label = timing.base;
+                elapsed += previous.elapsed;
+                last = null;
+            }
+            return [label + ": ", "server (" + elapsed.toFixed(2) + " s)", last];
+        }
+        """,
+        Output("timing-label", "children"),
+        Output("timing", "children"),
+        Output("timing-last", "data"),
+        Input("timing-store", "data"),
+        State("timing-last", "data"),
+    )

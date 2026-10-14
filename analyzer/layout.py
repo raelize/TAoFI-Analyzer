@@ -26,6 +26,9 @@ def create_layout(app):
             dcc.Store(id="config-store", data=asdict(server_config)),
             dcc.Store(id="data-hidden-columns", data=["hex(response)"], storage_type="local"),
             dcc.Store(id="zoom-store"),
+            # timings of the server callbacks (see timing.py)
+            dcc.Store(id="timing-store"),
+            dcc.Store(id="timing-last"),
             html.Div(
                 [
                     html.H4("Research by Raelize"),

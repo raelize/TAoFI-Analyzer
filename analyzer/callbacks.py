@@ -16,7 +16,7 @@ from analyzer.database import (data_directory, database_path, file_key, get_argv
                                get_parameters, is_local_request, list_directory, query_connection, query_error)
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
-from analyzer.timing import timed
+from analyzer.timing import register_timing, timed
 from analyzer.graphs import GRAPHS
 
 _PAGE_SIZE = 100
@@ -24,6 +24,8 @@ _MAX_ROWS = 1000  # per request of the data grid
 
 
 def register_callbacks(app):
+    register_timing(app)
+
     # callback for remembering the zoomed area of the graph (shown on the information tab);
     # runs in the browser and reads the plot's current axes, so quick successive
     # zooms can't be merged into an outdated area
