@@ -315,10 +315,6 @@ def data_tab(config, refresh):
                         dbc.Switch(id="switch-wraptext", value=False, label="Wrap response", className="d-inline-block me-3"),
                         dcc.Input(id="response_s", type="number", placeholder="start", className="d-inline-block me-2", persistence=True),
                         dcc.Input(id="response_e", type="number", placeholder="end", className="d-inline-block me-2", persistence=True),
-                        dbc.Button("Download CSV", id="data-download-button", n_clicks=0, size="sm", color="secondary",
-                                   className="ms-2"),
-                        html.Span(id="data-download-note", className="ms-2 text-muted"),
-                        dcc.Download(id="data-download"),
                     ],
                     className="mb-0",
                 ),
@@ -394,15 +390,12 @@ def database_tab(config, refresh):
                         style={"flex": 1, "display": "inline-block", "marginRight": "10px"},
                     ),
                     dbc.Button("Execute", id="query-button", n_clicks=0, color="primary", style={"display": "inline-block"}),
-                    dbc.Button("Download CSV", id="query-download-button", n_clicks=0, color="secondary", className="ms-2 text-nowrap"),
-                    dcc.Download(id="query-download"),
                 ],
                 style={"display": "flex", "alignItems": "center"},
             ),
         )
     )
-    note = html.Div(id="query-download-note", className="text-muted mt-1")
-    return [query, note, dcc.Loading(html.Div(id="query-output", className="mt-2"), **LOADING)]
+    return [query, dcc.Loading(html.Div(id="query-output", className="mt-2"), **LOADING)]
 
 
 def guide_tab(config, refresh):

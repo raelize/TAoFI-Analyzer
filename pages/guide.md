@@ -65,8 +65,6 @@ For each row of data, you can:
 - wrap the response in the cell or not
 - slice the response or not
 
-`Download CSV` downloads the rows as shown: filtered, sorted and with the columns shown (at most 100000 rows).
-
 Use the column selector below the switches to choose which columns are shown (e.g., add `hex(response)` for a hex representation of the response). The selection is remembered by the browser.
 
 ...
@@ -85,4 +83,4 @@ The information tab lists information related to the selected database.
 
 ---
 
-The database tab can be used to execute raw queries on the selected database: it shows the number of rows and the first 100 of them (blobs, like the response, as text; use e.g. `hex(response)` for hex). `Download CSV` downloads the result (at most 100000 rows). Queries that take longer than 60 seconds are stopped.
+The database tab can be used to execute raw queries on the selected database: it shows the number of rows and the first 100 of them (blobs, like the response, as text; use e.g. `hex(response)` for hex). Queries that take longer than 60 seconds are stopped.
