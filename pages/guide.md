@@ -31,8 +31,10 @@ The graph types:
 - `scatter`: the experiments with the x and y parameters against each other, colored by their classification
   With a column named `x` on the x-axis or `y` on the y-axis (e.g. a scan over the positions of a chip), the graph is shown like an image: the x-axis at the top, the y-axis going down, in a fixed size of 1000 by 1000 pixels.
 - `scatter2`: two scatter plots next to each other, each with its own x and y parameter (the right one: `x-axis (right)`, `y-axis (right)`); hiding a color in the legend hides it in both
-- `3d`: the x, y and z parameters against each other (the z axis is only shown for this graph); drag to rotate, scroll to zoom. A browser can draw about 100000 points in 3d: with more experiments a (fixed) sample of 100000 is drawn; the legend counts all experiments
+- `3d`: the x, y and z parameters against each other (the z axis is only shown for this graph); drag to rotate, scroll to zoom
 - `mega`: every parameter (number column, except `id`) against every other one, one plot per pair; the axes aren't used
+
+A browser takes long to draw many points: with more than 200000 experiments (100000 for `3d`) a sample is drawn, shown in the legend title (e.g. `Classification ( 1,000,000; 200,000 shown )`). Only the large classes are thinned out: every experiment of a small class (e.g. the few successful glitches) is drawn. The counts in the legend are of all experiments, and a selection in the graph includes the experiments that aren't drawn.
 
 Click a point in the graph to see its experiment below the graph: all its columns, its response (as text and hex) and how many experiments have the same response. This needs `Show hover info on the graph` to be on.
 

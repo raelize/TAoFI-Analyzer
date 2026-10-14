@@ -1,6 +1,6 @@
 import plotly.graph_objects as go
 
-from analyzer.graphs.common import (COLOR_MAP, axis_values, color_traces,
+from analyzer.graphs.common import (COLOR_MAP, axis_values, classification, color_traces, shown_points,
                                     compact, legend_labels, message_figure, update_legend_labels)
 
 # columns that aren't parameters of the experiments
@@ -30,7 +30,8 @@ def mega_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     values = {column: axis_values(dataset, column, config.jitter) for column in columns}
 
     fig = go.Figure()
-    for code, mask in color_traces(colors):
+    shown = shown_points(colors, "mega")
+    for code, mask in color_traces(colors, shown):
         fig.add_trace(
             go.Splom(
                 dimensions=[{"label": column, "values": compact(values[column][mask])} for column in columns],
@@ -55,7 +56,7 @@ def mega_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
             "xanchor": "right",
             "x": 1,
             "font": {"size": 15},
-            "title": {"side": "top", "text": f"Classification ( {len(colors):,} ):", "font": {"size": 15}},
+            "title": {"side": "top", "text": classification(colors, shown), "font": {"size": 15}},
         },
     )
     update_legend_labels(fig, legend_labels(colors, color_values, color_labels))

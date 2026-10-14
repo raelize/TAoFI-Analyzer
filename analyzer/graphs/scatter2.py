@@ -1,6 +1,6 @@
 from plotly.subplots import make_subplots
 
-from analyzer.graphs.common import build_scatter, legend_labels, update_legend_labels
+from analyzer.graphs.common import build_scatter, classification, legend_labels, shown_points, update_legend_labels
 
 
 def scatter2_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
@@ -13,9 +13,10 @@ def scatter2_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     color_labels = color_states[8:]
 
     colors = dataset.colors_for(config)
+    shown = shown_points(colors, "scatter2")
     fig = make_subplots(rows=1, cols=2, horizontal_spacing=0.06)
     for col, (xa, ya) in enumerate([(x, y), (config.x2, config.y2)], start=1):
-        for trace in build_scatter(dataset, xa, ya, colors, config.jitter).data:
+        for trace in build_scatter(dataset, xa, ya, colors, config.jitter, shown=shown).data:
             trace.showlegend = col == 1
             fig.add_trace(trace, row=1, col=col)
         fig.update_xaxes(title_text=xa, row=1, col=col)
@@ -33,7 +34,7 @@ def scatter2_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
             "xanchor": "center",
             "x": 0.5,
             "font": {"size": 15},
-            "title": {"side": "top", "text": f"Classification ( {len(colors):,} ):", "font": {"size": 15}},
+            "title": {"side": "top", "text": classification(colors, shown), "font": {"size": 15}},
         },
     )
     update_legend_labels(fig, legend_labels(colors, color_values, color_labels))

@@ -450,14 +450,15 @@ def test_clicked_experiment(client, tmp_path, make_database):
 
 
 def test_clicked_experiment_of_a_sample(client, tmp_path, make_database, monkeypatch):
-    from analyzer import graphs
-    from analyzer.graphs.common import sample
+    import numpy as np
 
-    monkeypatch.setitem(graphs.GRAPH_MAX_POINTS, "3d", 50)
+    from analyzer.graphs import common
+
+    monkeypatch.setitem(common.MAX_POINTS, "3d", 50)
     make_database(rows=[(i, i, 2 * i, "G", b"x") for i in range(500)])
     store = dict(client.layout_store(), directory=str(tmp_path), database="test.sqlite", x="delay", y="length", z="id", graph="3d")
     # the 4th point drawn
-    row = int(sample(500, 50).nonzero()[0][3])
+    row = int(common.sample(np.array(["G"] * 500, dtype=object), 50).nonzero()[0][3])
     code, response = click(client, store, 0, 3, x=row, y=2 * row, z=row)
     assert f"id {row}" in text(response["experiment"]["children"])
 

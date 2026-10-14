@@ -82,16 +82,50 @@ def color_masks(colors):
     return {str(code): codes == index for index, code in enumerate(uniques)}
 
 
-def sample(count, limit):
-    """Which of ``count`` experiments a graph that can show about ``limit`` draws (a mask; None: all).
+# The points a graph type draws at most (about): a browser takes long to draw
+# more (a million: ~20 s for scatter, and a 3d plot needs ~4 kB per point: a
+# million crashed the browser). With more experiments a sample is drawn.
+MAX_POINTS = {
+    "scatter": 200_000,
+    "scatter2": 200_000,
+    "3d": 100_000,
+    "mega": 200_000,
+}
 
-    A fixed pseudo-random choice per experiment, the same every time the graph
-    is drawn (new experiments are added at the end); not every n-th experiment,
-    which would skip a regular pattern of glitch parameters.
+
+def sample(colors, limit):
+    """Which experiments a graph that can show about ``limit`` points draws (a mask; None: all).
+
+    Only the large classes (colors) are thinned out: every experiment of a
+    small class is drawn (those are often the interesting ones, e.g. a few
+    successful glitches), the rest of ``limit`` is shared by the larger ones.
+    Within a class a fixed pseudo-random choice per experiment, the same every
+    time the graph is drawn (new experiments are added at the end); not every
+    n-th experiment, which would skip a regular pattern of glitch parameters.
     """
+    count = len(colors)
     if limit is None or count <= limit:
         return None
-    return np.random.default_rng(0).random(count) < limit / count
+    codes, uniques = pd.factorize(np.asarray(colors, dtype=object))
+    sizes = np.bincount(codes, minlength=len(uniques))
+    drawn = np.zeros(len(uniques))
+    left = float(limit)
+    # smallest first: those that fit their share are drawn completely
+    for done, index in enumerate(np.argsort(sizes)):
+        drawn[index] = min(sizes[index], left / (len(sizes) - done))
+        left -= drawn[index]
+    return np.random.default_rng(0).random(count) < (drawn / sizes)[codes]
+
+
+def shown_points(colors, graph):
+    """The experiments graph type ``graph`` draws (see sample())."""
+    return sample(colors, MAX_POINTS.get(graph))
+
+
+def classification(colors, shown):
+    """The legend title: the number of experiments (and how many are drawn)."""
+    total = f"{len(colors):,}" if shown is None else f"{len(colors):,}; {int(shown.sum()):,} shown"
+    return f"Classification ( {total} ):"
 
 
 def color_traces(colors, shown=None):
@@ -143,13 +177,14 @@ def count_colors(colors):
     return counts
 
 
-def build_scatter(dataset, x, y, colors, jitter, labels=None):
-    """One WebGL scatter trace per color, in COLOR_ORDER, mimicking px.scatter's look."""
+def build_scatter(dataset, x, y, colors, jitter, labels=None, shown=None):
+    """One WebGL scatter trace per color, in COLOR_ORDER, mimicking px.scatter's look;
+    only the experiments ``shown`` (see sample())."""
     labels = labels or {}
     xv = axis_values(dataset, x, jitter)
     yv = axis_values(dataset, y, jitter)
     fig = go.Figure()
-    for code, mask in color_traces(colors):
+    for code, mask in color_traces(colors, shown):
         fig.add_trace(
             go.Scattergl(
                 x=compact(xv[mask]),

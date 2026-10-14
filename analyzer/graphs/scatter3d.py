@@ -1,11 +1,7 @@
 import plotly.graph_objects as go
 
-from analyzer.graphs.common import (COLOR_MAP, axis_values, color_traces, compact, legend_labels, sample,
-                                    update_legend_labels)
-
-# points drawn at most (about): a browser needs ~4 kB per point of a 3d scatter
-# plot (100000: ~0.4 GB; 1000000 crashed it)
-MAX_POINTS = 100_000
+from analyzer.graphs.common import (COLOR_MAP, axis_values, classification, color_traces, compact, legend_labels,
+                                    shown_points, update_legend_labels)
 
 
 def scatter3d_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
@@ -16,8 +12,7 @@ def scatter3d_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
 
     colors = dataset.colors_for(config)
     xv, yv, zv = (axis_values(dataset, axis, config.jitter) for axis in (x, y, z))
-    shown = sample(len(colors), MAX_POINTS)
-    total = f"{len(colors):,}" if shown is None else f"{len(colors):,}; {int(shown.sum()):,} shown"
+    shown = shown_points(colors, "3d")
 
     fig = go.Figure()
     for code, mask in color_traces(colors, shown):
@@ -46,7 +41,7 @@ def scatter3d_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
             "xanchor": "center",
             "x": 0.5,
             "font": {"size": 15},
-            "title": {"side": "top", "text": f"Classification ( {total} ):", "font": {"size": 15}},
+            "title": {"side": "top", "text": classification(colors, shown), "font": {"size": 15}},
         },
     )
     update_legend_labels(fig, legend_labels(colors, color_values, color_labels))

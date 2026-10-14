@@ -1,6 +1,6 @@
 from dash.exceptions import PreventUpdate
 
-from analyzer.graphs.common import build_scatter, legend_labels, update_legend_labels
+from analyzer.graphs.common import build_scatter, classification, legend_labels, shown_points, update_legend_labels
 
 
 def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
@@ -9,10 +9,10 @@ def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
 
     # recolor (vectorized: regexes run on the unique responses only)
     colors = dataset.colors_for(config)
-    total_records = len(colors)
+    shown = shown_points(colors, "scatter")
 
     try:
-        fig = build_scatter(dataset, x, y, colors, config.jitter)
+        fig = build_scatter(dataset, x, y, colors, config.jitter, shown=shown)
     except Exception as e:
         print(e)
         raise PreventUpdate
@@ -33,7 +33,7 @@ def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
             font=dict(size=15),
             title=dict(
                 side="top",
-                text=f"Classification ( {total_records:,} ):",
+                text=classification(colors, shown),
                 font=dict(size=15),
             ),
         ),
