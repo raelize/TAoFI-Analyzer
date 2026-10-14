@@ -8,6 +8,7 @@ import pytest
 from analyzer import database
 from analyzer.callbacks import column_defs
 from analyzer.config import COLORS
+from analyzer.graphs.common import COLOR_MAP
 from analyzer.table import Table
 from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, EXAMPLE_EXPERIMENTS, SLOW_CONDITION
 
@@ -661,7 +662,7 @@ def test_recolored_dots(client, store):
     code, response = client.call(
         "recolor-red-dot.style", {"graph-store.data": dict(store, colors={"red": ["crash", None]})}, "graph-store.data"
     )
-    assert response["recolor-red-dot"]["style"]["background"] == "red"
+    assert response["recolor-red-dot"]["style"]["background"] == COLOR_MAP["R"]
     assert response["recolor-green-dot"]["style"]["background"] == "transparent"
 
 

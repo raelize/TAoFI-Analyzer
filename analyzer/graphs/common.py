@@ -29,7 +29,8 @@ AXIS_LABELS = {
 COLOR_CODES = ["G", "Y", "M", "O", "C", "B", "Z", "R"]
 # Legend/trace order (timeout first, as before).
 COLOR_ORDER = ["P", *COLOR_CODES]
-COLOR_MAP = {
+# The names of the colors (as in the recolor fields and the legend).
+COLOR_NAMES = {
     "P": "pink",
     "G": "green",
     "Y": "yellow",
@@ -39,6 +40,19 @@ COLOR_MAP = {
     "B": "blue",
     "Z": "black",
     "R": "red",
+}
+# The colors drawn: easy to tell apart (after Tableau's/D3's category colors;
+# e.g. "yellow" is gold: plain yellow hardly shows on a light background).
+COLOR_MAP = {
+    "P": "#ff9ec4",
+    "G": "#2ca02c",
+    "Y": "#e6b400",
+    "M": "#d81b9a",
+    "O": "#ff7f0e",
+    "C": "#17becf",
+    "B": "#1f6fd1",
+    "Z": "#1a1a1a",
+    "R": "#d62728",
 }
 
 
@@ -237,7 +251,7 @@ def legend_labels(colors, regexes, labels):
         return f"( {count} / {count / total if total else 0:.1%} )"
 
     result = {
-        code: f"{label or regex or COLOR_MAP[code]} {share(counts[code])}"
+        code: f"{label or regex or COLOR_NAMES[code]} {share(counts[code])}"
         for code, regex, label in zip(COLOR_CODES, regexes, labels, strict=True)
     }
     result["P"] = f"timeout {share(counts['P'])}"
