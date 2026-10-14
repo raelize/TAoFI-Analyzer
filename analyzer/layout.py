@@ -144,6 +144,8 @@ def graph_tab(config, refresh):
                         persistence=True,
                     ),
                     refresh_timer("refresh-timer", refresh),
+                    # while databases are counted in the background (see update_database_list())
+                    dcc.Interval(id="count-timer", interval=1000, disabled=True),
                 ],
                 style={"display": "flex", "alignItems": "center"},
             )

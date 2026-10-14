@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import threading
 import time
 
 import pytest
@@ -165,6 +166,42 @@ def test_count_cache_keeps_one_entry_per_file(tmp_path):
         assert get_number_of_experiments(str(tmp_path), "growing.sqlite") == i + 1
     assert len(database._COUNT_CACHE) == 1
     writer.close()
+
+
+def test_counting_in_chunks(tmp_path, make_database, monkeypatch):
+    monkeypatch.setattr(database, "COUNT_CHUNK", 3)
+    make_database(rows=[(i, 2, 3, "G", b"x") for i in range(10)])
+    assert get_number_of_experiments(str(tmp_path), "test.sqlite") == 10
+    # removed experiments (not only new ones): counted again
+    con = sqlite3.connect(tmp_path / "test.sqlite")
+    con.execute("DELETE FROM experiments WHERE rowid > 4")
+    con.commit()
+    con.close()
+    assert get_number_of_experiments(str(tmp_path), "test.sqlite") == 4
+
+
+def test_large_databases_are_counted_in_the_background(tmp_path, make_database, monkeypatch):
+    monkeypatch.setattr(database, "COUNT_IN_BACKGROUND", 0)
+    make_database("big.sqlite", rows=[(i, 2, 3, "G", b"x") for i in range(5)])
+    make_database("other.sqlite", columns="id integer")
+    started = threading.Event()
+    count_experiments = database.count_experiments
+
+    def slow(*args):
+        started.wait(5)
+        return count_experiments(*args)
+
+    monkeypatch.setattr(database, "count_experiments", slow)
+    options = {o["value"]: o["label"] for o in get_databases(str(tmp_path))}
+    assert options == {"big.sqlite": "big.sqlite (counting…)", "other.sqlite": "other.sqlite (counting…)"}
+    assert database.counting()
+    started.set()
+    for _ in range(100):
+        if not database.counting():
+            break
+        time.sleep(0.05)
+    options = {o["value"]: o["label"] for o in get_databases(str(tmp_path))}
+    assert options == {"big.sqlite": "big.sqlite (5)", "other.sqlite": "other.sqlite (not an analyzer database)"}
 
 
 def test_count_after_the_file_is_replaced(tmp_path):

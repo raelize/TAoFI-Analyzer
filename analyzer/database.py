@@ -2,7 +2,9 @@
 import os
 import re
 import sqlite3
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from os import listdir
 from urllib.request import pathname2url
@@ -13,6 +15,13 @@ from flask import has_request_context, request
 from analyzer.config import server_config
 
 _COUNT_CACHE = {}  # path -> (file_key, number of experiments, last rowid)
+# large databases are counted in the background (see get_number_of_experiments())
+COUNT_IN_BACKGROUND = 50 * 2**20  # bytes
+COUNT_CHUNK = 100_000  # rowids counted at a time (with the read lock released in between)
+COUNTING = "counting"
+_COUNTER = ThreadPoolExecutor(max_workers=2, thread_name_prefix="count")
+_COUNTING = set()  # paths being counted
+_COUNT_LOCK = threading.Lock()
 QUERY_TIMEOUT = 60  # seconds, for queries entered by the user
 LOAD_CHUNK = 10_000  # experiments read at a time (with the read lock released in between)
 MEMORY_RESERVE = 256 * 2**20  # bytes a database load leaves free (for the rest of the analyzer and the system)
@@ -106,36 +115,80 @@ def connect(path):
 REQUIRED_COLUMNS = ("color", "response")
 
 
-def get_number_of_experiments(directory, database):
-    """Number of experiments, or None if the file is not an analyzer database."""
-    database_path = os.path.join(directory, database)
+def count_rows(connection, after, last):
+    """The number of experiments with a rowid in (after, last].
+
+    A range of rowids at a time, each by its own statement: like loading,
+    counting all experiments reads the whole file (seconds for a large one),
+    and a writer (a glitch script) can get the lock in between.
+    """
+    count = 0
+    while after < last:
+        end = min(after + COUNT_CHUNK, last)
+        count += connection.execute("SELECT count(*) FROM experiments WHERE rowid > ? AND rowid <= ?", (after, end)).fetchone()[0]
+        after = end
+    return count
+
+
+def count_experiments(database_path, key, cached):
+    """(number of experiments or None if not an analyzer database, last rowid) of file version ``key``.
+
+    Only the new experiments are counted when the file was appended to since
+    the ``cached`` count (see _COUNT_CACHE).
+    """
+    with closing(connect(database_path)) as connection:
+        columns = {row[0] for row in connection.execute("SELECT name FROM pragma_table_info('experiments')")}
+        if not all(column in columns for column in REQUIRED_COLUMNS):
+            return None, None
+        last = connection.execute("SELECT max(rowid) FROM experiments").fetchone()[0] or 0
+        if cached is not None and cached[1] is not None and appended_to(cached[0], key) and last >= cached[2]:
+            return cached[1] + count_rows(connection, cached[2], last), last
+        return count_rows(connection, 0, last), last
+
+
+def get_number_of_experiments(directory, database, background=False):
+    """Number of experiments, or None if the file is not an analyzer database.
+
+    With ``background`` a large database that has to be counted completely is
+    counted in the background: COUNTING until it's done.
+    """
+    database_path = os.path.abspath(os.path.join(directory, database))
 
     try:
         key = file_key(database_path)
         cached = _COUNT_CACHE.get(key[0])
         if cached is not None and cached[0] == key:
             return cached[1]
-        with closing(connect(database_path)) as connection:
-            with closing(connection.cursor()) as cursor:
-                if cached is not None and cached[1] is not None and appended_to(cached[0], key):
-                    # only count the new experiments (counting all of them reads the whole file)
-                    cursor.execute("SELECT count(*), max(rowid) FROM experiments WHERE rowid > ?", (cached[2],))
-                    new, last = cursor.fetchone()
-                    count, last = cached[1] + new, last or cached[2]
-                else:
-                    cursor.execute("SELECT name FROM pragma_table_info('experiments')")
-                    columns = {row[0] for row in cursor.fetchall()}
-                    if not all(column in columns for column in REQUIRED_COLUMNS):
-                        count, last = None, None
-                    else:
-                        cursor.execute("SELECT count(*), max(rowid) FROM experiments")
-                        count, last = cursor.fetchone()
-                        last = last or 0
+        complete = cached is None or cached[1] is None or not appended_to(cached[0], key)
+        if background and complete and key[3] > COUNT_IN_BACKGROUND:
+            with _COUNT_LOCK:
+                if database_path not in _COUNTING:
+                    _COUNTING.add(database_path)
+                    _COUNTER.submit(_count_in_background, database_path)
+            return COUNTING
+        count, last = count_experiments(database_path, key, cached)
         # one entry per file (not per version), so a growing database doesn't grow the cache
         _COUNT_CACHE[key[0]] = (key, count, last)
         return count
     except Exception as e:
         print("ERROR (get_number_of_experiments): %s" % (e))
+
+
+def _count_in_background(database_path):
+    try:
+        key = file_key(database_path)
+        _COUNT_CACHE[key[0]] = (key, *count_experiments(database_path, key, _COUNT_CACHE.get(key[0])))
+    except Exception as e:
+        print("ERROR (get_number_of_experiments): %s" % (e))
+    finally:
+        with _COUNT_LOCK:
+            _COUNTING.discard(database_path)
+
+
+def counting():
+    """Whether databases are being counted in the background."""
+    with _COUNT_LOCK:
+        return bool(_COUNTING)
 
 
 def get_databases(directory):
@@ -149,8 +202,10 @@ def get_databases(directory):
     # transform to options; other sqlite files are shown, but can't be selected
     databases_options = []
     for database in databases:
-        count = get_number_of_experiments(directory, database)
-        if count is None:
+        count = get_number_of_experiments(directory, database, background=True)
+        if count is COUNTING:
+            databases_options.append({"label": f"{database} (counting…)", "value": database})
+        elif count is None:
             databases_options.append(
                 {"label": f"{database} (not an analyzer database)", "value": database, "disabled": True}
             )

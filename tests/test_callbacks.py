@@ -130,7 +130,15 @@ def test_database_list(client, tmp_path):
     assert response["database-dropdown"]["options"] == [{"label": f"{EXAMPLE_DATABASE} ({EXAMPLE_EXPERIMENTS})", "value": EXAMPLE_DATABASE}]
     assert response["directory-input"]["invalid"] is False
     code, response = client.call("database-dropdown.options", {"directory-input.value": str(tmp_path / "missing")}, "directory-input.value")
-    assert response == {"database-dropdown": {"options": []}, "directory-input": {"invalid": True}}
+    assert response == {"database-dropdown": {"options": []}, "directory-input": {"invalid": True}, "count-timer": {"disabled": True}}
+
+
+def test_database_list_while_counting(client, tmp_path, make_database, monkeypatch):
+    make_database()
+    monkeypatch.setattr("analyzer.callbacks.counting", lambda: True)
+    code, response = client.call("database-dropdown.options", {"directory-input.value": str(tmp_path)}, "directory-input.value")
+    # checked again every second until all are counted
+    assert response["count-timer"]["disabled"] is False
 
 
 def test_axis_lists(client, store):

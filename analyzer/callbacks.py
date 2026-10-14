@@ -11,7 +11,7 @@ from dash.exceptions import PreventUpdate
 from dash_ag_grid import AgGrid
 
 from analyzer.config import COLORS, ROW_COLORS, AnalyzerConfig, server_config
-from analyzer.database import (data_directory, database_path, file_key, get_argv, get_databases,
+from analyzer.database import (counting, data_directory, database_path, file_key, get_argv, get_databases,
                                get_parameters, is_local_request, list_directory, query_connection, query_error)
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
@@ -108,15 +108,19 @@ def register_callbacks(app):
     @app.callback(
         Output("database-dropdown", "options"),
         Output("directory-input", "invalid"),
+        Output("count-timer", "disabled"),
         Input("update-button", "n_clicks"),
         Input("refresh-timer", "n_intervals"),
         Input("directory-input", "value"),
+        Input("count-timer", "n_intervals"),
     )
-    def update_database_list(nr_of_clicks, n_intervals, directory):
+    def update_database_list(nr_of_clicks, n_intervals, directory, counted):
         directory = data_directory(directory)
         if directory is None:
-            return [], True
-        return get_databases(directory), False
+            return [], True, True
+        # large databases are counted in the background: check again until they're done
+        options = get_databases(directory)
+        return options, False, not counting()
 
     # callback for the directory browser: open/close it, walk the tree, pick a directory
     @app.callback(
