@@ -1,3 +1,8 @@
 .header-center-aligned .ag-header-cell-label {
     justify-content: center;
 }
+
+/* the data tab: a fixed width font (responses and numbers line up) */
+#data .ag-theme-quartz {
+    --ag-font-family: ui-monospace, "SFMono-Regular", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
