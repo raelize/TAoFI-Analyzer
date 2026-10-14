@@ -5,7 +5,7 @@ import pytest
 
 from analyzer.config import AnalyzerConfig
 from analyzer.dataset import get_dataset
-from analyzer.table import build_table, get_table, grid_filter_mask
+from analyzer.table import build_table, get_table, grid_filter_mask, per_response
 
 COLUMNS = "id integer, glitch_delay integer, normal_voltage real, note text, extra blob, empty integer, sometimes real, color text, response blob"
 ROWS = [
@@ -154,6 +154,24 @@ def test_filtering(dataset):
     # filter on hex
     page, count = rows(table, filters={"hex(response)": {"filterType": "text", "type": "startsWith", "filter": "46"}})
     assert [row["id"] for row in page] == [2]
+
+
+def test_text_is_shared_per_distinct_response(dataset):
+    table = build_table(dataset, dataset.base_colors, False, None, None)
+    text = table.text_column()
+    assert list(text) == ["OK", "FAIL", "OK", "OK"]
+    assert text[0] is text[2] is text[3]
+    assert list(per_response(table.responses, len)) == [2, 4, 2, 2]
+
+
+def test_text_filters_with_repeated_and_null_values(dataset):
+    table = build_table(dataset, dataset.base_colors, False, None, None)
+    page, count = rows(table, filters={"response": {"filterType": "text", "type": "notContains", "filter": "ok"}})
+    assert [row["id"] for row in page] == [2]
+    page, count = rows(table, filters={"sometimes": {"filterType": "number", "type": "blank"}})
+    assert [row["id"] for row in page] == [1]
+    page, count = rows(table, filters={"response": {"filterType": "text", "type": "blank"}})
+    assert count == 0
 
 
 def test_filtering_squeezed_min_max(dataset):

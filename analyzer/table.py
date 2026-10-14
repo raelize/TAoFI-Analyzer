@@ -49,12 +49,12 @@ class Table:
 
     def text_column(self):
         if self._text is None:
-            self._text = np.array([self.decode(r) for r in self.responses], dtype=object)
+            self._text = per_response(self.responses, self.decode)
         return self._text
 
     def hex_column(self):
         if self._hex is None:
-            self._hex = np.array([self.hexify(r) for r in self.responses], dtype=object)
+            self._hex = per_response(self.responses, self.hexify)
         return self._hex
 
     def column(self, name):
@@ -63,7 +63,7 @@ class Table:
         if name == "hex(response)":
             return pd.Series(self.hex_column())
         if name == "rlen":
-            return pd.Series([len(r) for r in self.responses])
+            return pd.Series(per_response(self.responses, len).astype(int))
         return self.df[name].reset_index(drop=True)
 
     def select(self, sort_model, filter_model):
@@ -75,8 +75,15 @@ class Table:
 
         mask = np.ones(len(self.responses), dtype=bool)
         for name, model in (filter_model or {}).items():
-            if name in self.columns:
-                mask &= grid_filter_mask(self.column(name), model)
+            if name not in self.columns:
+                continue
+            values = self.column(name)
+            if values.dtype == object:
+                # text: once per distinct value (responses repeat a lot)
+                codes, uniques = pd.factorize(values, use_na_sentinel=False)
+                mask &= grid_filter_mask(pd.Series(uniques, dtype=object), model)[codes]
+            else:
+                mask &= grid_filter_mask(values, model)
         indices = np.flatnonzero(mask)
 
         if sort_model:
@@ -106,6 +113,14 @@ class Table:
             row["response"] = self.decode(response)
             row["hex(response)"] = self.hexify(response)
         return rows, int(len(indices))
+
+
+def per_response(responses, func):
+    """``func`` of every response, computed once per distinct response (the results are shared)."""
+    codes, uniques = pd.factorize(responses, use_na_sentinel=False)
+    results = np.empty(len(uniques), dtype=object)
+    results[:] = [func(r) for r in uniques]
+    return results[codes]
 
 
 def grid_filter_mask(values, model):
@@ -184,7 +199,7 @@ def build_table(dataset, colors, squeeze_records, response_s, response_e):
     # slice response
     responses = df["response"].to_numpy(dtype=object)
     if response_s is not None or response_e is not None:
-        responses = np.array([r[response_s:response_e] for r in responses], dtype=object)
+        responses = per_response(responses, lambda r: r[response_s:response_e])
 
     if not squeeze_records:
         out = pd.DataFrame({column: values(column) for column in columns})
