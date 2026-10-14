@@ -7,8 +7,8 @@ import pytest
 
 from analyzer import database
 from analyzer.config import server_config
-from analyzer.database import (appended_to, available_memory, connect, data_directory, database_path, file_key, get_argv, get_databases,
-                               get_number_of_experiments, get_parameters, list_directory, load_dataframe, load_experiments,
+from analyzer.database import (appended_to, available_memory, being_written, connect, data_directory, database_path, file_key, get_argv, get_databases,
+                               get_number_of_experiments, get_parameters, list_directory, load_dataframe, load_experiments, run_query,
                                match_hex, match_string, query_connection, query_error)
 from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, EXAMPLE_EXPERIMENTS, create_database
 
@@ -317,6 +317,70 @@ def test_a_chunk_reads_a_range_of_rowids(tmp_path, make_database, monkeypatch):
     assert list(df["id"]) == [9] and last == 10
     ranges = [s.split("rowid > ")[1].split(" AND (")[0] for s in statements if "rowid > " in s]
     assert ranges == ["0 AND rowid <= 3", "3 AND rowid <= 6", "6 AND rowid <= 9", "9 AND rowid <= 10"]
+
+
+def test_being_written(tmp_path):
+    path = str(tmp_path / "test.sqlite")
+    create_database(path, COLUMNS).close()
+    assert being_written(path)
+    # not changed for a while
+    os.utime(path, (time.time() - 120, time.time() - 120))
+    assert not being_written(path)
+    # in WAL mode readers don't block the writer
+    create_database(str(tmp_path / "wal.sqlite"), COLUMNS, wal=True).close()
+    assert not being_written(str(tmp_path / "wal.sqlite"))
+
+
+def test_run_query_counts_only_when_needed(tmp_path, make_database, monkeypatch):
+    make_database(rows=[(i, i, 3, "G", b"ok") for i in range(10)])
+    path = str(tmp_path / "test.sqlite")
+    statements = []
+    connection = database.query_connection
+
+    def spy(*args):
+        con = connection(*args)
+        con.set_trace_callback(statements.append)
+        return con
+
+    monkeypatch.setattr(database, "query_connection", spy)
+    df, count = run_query(path, "id, response", "id < 5", 100)
+    assert count == 5 and list(df["response"]) == ["ok"] * 5
+    assert not any("count(*)" in statement for statement in statements)
+    df, count = run_query(path, "*", "", 3)
+    assert (len(df), count) == (3, 10)
+
+
+def test_run_query_on_a_database_being_written_to(tmp_path, make_database, monkeypatch):
+    make_database(rows=[(i, i, 3, "G", b"ok") for i in range(10)])
+    path = str(tmp_path / "test.sqlite")
+    deadlines = []
+    set_deadline = database.set_deadline
+
+    def stop_counting(con, seconds=None):
+        deadlines.append(seconds)
+        set_deadline(con, seconds)
+        if len(deadlines) == 2:
+            # the count takes too long
+            con.set_progress_handler(lambda: True, 1)
+
+    monkeypatch.setattr(database, "set_deadline", stop_counting)
+    df, count = run_query(path, "*", "", 3)
+    assert (len(df), count) == (3, None)
+    assert deadlines == [database.LIVE_QUERY_TIMEOUT] * 2
+    # not being written to: the usual time limit
+    os.utime(path, (time.time() - 120, time.time() - 120))
+    deadlines.clear()
+    run_query(path, "*", "", 3)
+    assert deadlines == [database.QUERY_TIMEOUT] * 2
+
+
+def test_slow_queries_on_a_database_being_written_to(tmp_path, make_database, monkeypatch):
+    make_database(rows=[(1, 1, 3, "G", b"ok")])
+    monkeypatch.setattr(database, "LIVE_QUERY_TIMEOUT", 0.2)
+    where = "(WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 20000000) SELECT count(*) FROM r) > 0"
+    with pytest.raises(TimeoutError) as error:
+        run_query(str(tmp_path / "test.sqlite"), "*", where, 100)
+    assert query_error(error.value).startswith("the query took longer than 0.2 s: stopped, because a glitch script")
 
 
 def test_writes_can_happen_while_loading(tmp_path, make_database, monkeypatch):

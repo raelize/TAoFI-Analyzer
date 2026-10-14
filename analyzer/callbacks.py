@@ -626,7 +626,10 @@ def register_callbacks(app):
             print(e)
             return f"ERROR: {query_error(e)}"
 
-        note = f"{count} rows" + (f"; the first {QUERY_ROWS} are shown" if count > QUERY_ROWS else "")
+        if count is None:
+            note = f"{QUERY_ROWS} or more rows, the first {QUERY_ROWS} are shown (counting them took too long)"
+        else:
+            note = f"{count} rows" + (f"; the first {QUERY_ROWS} are shown" if count > QUERY_ROWS else "")
         return [html.Div(note, className="mb-2"), query_grid(df)]
 
 

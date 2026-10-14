@@ -615,6 +615,14 @@ def test_query_shows_the_first_rows(client, store):
     assert isinstance(rows[0]["response"], str)
 
 
+def test_query_not_counted(client, store, monkeypatch):
+    import pandas as pd
+
+    monkeypatch.setattr("analyzer.callbacks.run_query", lambda *args: (pd.DataFrame({"id": range(100)}), None))
+    note, columns, rows = query(client, store, "id", "")
+    assert note == "100 or more rows, the first 100 are shown (counting them took too long)"
+
+
 def test_query_errors(client, store):
     assert query(client, store, "nope").startswith("ERROR:")
     assert query(client, dict(store, database="../../etc/passwd")) == "ERROR: select a database on the Graph tab first"

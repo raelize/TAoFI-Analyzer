@@ -23,6 +23,10 @@ _COUNTER = ThreadPoolExecutor(max_workers=2, thread_name_prefix="count")
 _COUNTING = set()  # paths being counted
 _COUNT_LOCK = threading.Lock()
 QUERY_TIMEOUT = 60  # seconds, for queries entered by the user
+# The database tab's queries on a database a glitch script is writing to: a
+# reader blocks the writer, and Python's sqlite3 waits 5 s for the lock.
+LIVE_QUERY_TIMEOUT = 2  # seconds
+LIVE = 60  # seconds since the last change of a database being written to
 LOAD_CHUNK = 10_000  # rowids read at a time (with the read lock released in between)
 MEMORY_RESERVE = 256 * 2**20  # bytes a database load leaves free (for the rest of the analyzer and the system)
 
@@ -249,7 +253,7 @@ def match_hex(response, token):
     return response is not None and bytes.fromhex(token) in response
 
 
-def query_connection(path):
+def query_connection(path, seconds=None):
     """Read-only connection for user written queries: with the match_* helpers and a time limit."""
     con = connect(path)
 
@@ -257,15 +261,41 @@ def query_connection(path):
     con.create_function("match_string", 2, match_string)
     con.create_function("match_hex", 2, match_hex)
 
-    set_deadline(con)
+    set_deadline(con, seconds)
     return con
 
 
-def set_deadline(con):
-    """Abort queries on ``con`` that run longer than QUERY_TIMEOUT from now (they would
-    block a server worker); sqlite raises "interrupted" when the handler returns True."""
-    deadline = time.monotonic() + QUERY_TIMEOUT
+def set_deadline(con, seconds=None):
+    """Abort queries on ``con`` that run longer than ``seconds`` (QUERY_TIMEOUT) from now (they
+    would block a server worker); sqlite raises "interrupted" when the handler returns True."""
+    deadline = time.monotonic() + (seconds or QUERY_TIMEOUT)
     con.set_progress_handler(lambda: time.monotonic() > deadline, 100_000)
+
+
+def being_written(path):
+    """Whether a glitch script is probably writing to the database, blocked by readers:
+    changed in the last LIVE seconds, in rollback journal mode (not WAL, where readers
+    don't block the writer)."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(20)
+        if len(header) == 20 and header[18] == 2:
+            # WAL
+            return False
+        changed = max(os.stat(p).st_mtime for p in (path, path + "-journal") if os.path.exists(p))
+        return time.time() - changed < LIVE
+    except (OSError, ValueError):
+        return False
+
+
+def interrupted(e):
+    """Whether ``e`` is (caused by) a query stopped by its deadline (see set_deadline())."""
+    # pandas wraps the sqlite error in its own exception
+    while e is not None:
+        if isinstance(e, sqlite3.OperationalError) and str(e) == "interrupted":
+            return True
+        e = e.__cause__ or e.__context__
+    return False
 
 
 def available_memory():
@@ -282,23 +312,43 @@ def available_memory():
 
 def query_error(e):
     """Message for a failed user query."""
-    # pandas wraps the sqlite error in its own exception
-    cause = e
-    while cause is not None:
-        if isinstance(cause, sqlite3.OperationalError) and str(cause) == "interrupted":
-            return f"the query took longer than {QUERY_TIMEOUT} s"
-        cause = cause.__cause__ or cause.__context__
+    if isinstance(e, TimeoutError):
+        return str(e)
+    if interrupted(e):
+        return f"the query took longer than {QUERY_TIMEOUT} s"
     return str(e)
 
 
 def run_query(database_path, columns, where, limit):
     """``SELECT columns FROM experiments [WHERE where]``: the first ``limit`` rows (a DataFrame)
-    and the number of rows; blobs (e.g. the response) as text."""
+    and the number of rows (None: counting them took too long); blobs (e.g. the response) as text.
+
+    Each statement holds the read lock while it runs: on a database a glitch
+    script is writing to (see being_written()) they're stopped after
+    LIVE_QUERY_TIMEOUT, before the glitch script gives up waiting for the lock.
+    """
     query = f"SELECT {columns} FROM experiments" + (f" WHERE {where}" if where else "")
-    con = query_connection(database_path)
+    live = being_written(database_path)
+    seconds = LIVE_QUERY_TIMEOUT if live else QUERY_TIMEOUT
+    con = query_connection(database_path, seconds)
     try:
-        df = pd.read_sql(f"SELECT * FROM ({query}) LIMIT {int(limit)}", con)
-        count = con.execute(f"SELECT count(*) FROM ({query})").fetchone()[0]
+        try:
+            df = pd.read_sql(f"SELECT * FROM ({query}) LIMIT {int(limit)}", con)
+        except Exception as e:
+            if live and interrupted(e):
+                raise TimeoutError(f"the query took longer than {seconds} s: stopped, because a glitch script is "
+                                   "writing to the database (it can't while the query runs, and gives up after 5 s)") from e
+            raise
+        # (fewer rows than asked for: that's all of them)
+        count = len(df)
+        if count >= limit:
+            set_deadline(con, seconds)
+            try:
+                count = con.execute(f"SELECT count(*) FROM ({query})").fetchone()[0]
+            except sqlite3.OperationalError as e:
+                if not interrupted(e):
+                    raise
+                count = None
     finally:
         con.close()
     for column in df.columns:

@@ -85,4 +85,4 @@ The information tab lists information related to the selected database.
 
 ---
 
-The database tab can be used to execute raw queries on the selected database: it shows the number of rows and the first 100 of them (blobs, like the response, as text; use e.g. `hex(response)` for hex). Queries that take longer than 60 seconds are stopped.
+The database tab can be used to execute raw queries on the selected database: it shows the number of rows and the first 100 of them (blobs, like the response, as text; use e.g. `hex(response)` for hex). Queries that take longer than 60 seconds are stopped; on a database a glitch script is writing to (changed in the last minute) after 2 seconds, as the glitch script can't write while a query runs (and gives up after 5 seconds). Use WAL mode in the glitch script (`PRAGMA journal_mode=WAL`) to avoid this.
