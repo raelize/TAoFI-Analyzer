@@ -218,6 +218,8 @@ def test_3d_graph(client):
     ("scatter", {"x": None}, "Select the x axis to show the scatter graph"),
     ("3d", {}, "Select the z axis to show the 3d graph"),
     ("3d", {"z": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
+    ("scatter", {"y": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
+    ("simple", {"x": "a", "y": "b"}, f"{EXAMPLE_DATABASE} has no a, b columns"),
 ])
 def test_graph_without_its_axes(client, store, graph_type, axes, message):
     code, response = graph(client, dict(store, graph=graph_type, **axes))

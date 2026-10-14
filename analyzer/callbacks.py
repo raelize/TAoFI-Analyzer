@@ -290,7 +290,8 @@ def register_callbacks(app):
         regexes = [config.colors.get(color, [None, None])[0] for color in COLORS]
         labels = [config.colors.get(color, [None, None])[1] for color in COLORS]
 
-        missing = [axis for axis in GRAPH_AXES.get(config.graph, ("x", "y")) if getattr(config, axis) is None]
+        axes = GRAPH_AXES.get(config.graph, ("x", "y"))
+        missing = [axis for axis in axes if getattr(config, axis) is None]
         if missing:
             return message_figure(f"Select the {' and '.join(missing)} axis to show the {config.graph} graph")
 
@@ -298,6 +299,10 @@ def register_callbacks(app):
             dataset = get_dataset(config)
         except DatasetError as e:
             return message_figure(str(e))
+        # e.g. another database without the selected columns
+        missing = [getattr(config, axis) for axis in axes if getattr(config, axis) not in dataset.df.columns]
+        if missing:
+            return message_figure(f"{config.database} has no {', '.join(missing)} column{'s' if len(missing) > 1 else ''}")
 
         # create graph
         if config.graph in GRAPHS:
