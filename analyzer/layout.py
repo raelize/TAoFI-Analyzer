@@ -145,7 +145,10 @@ def graph_tab(config, refresh):
                         id="switch-autorefresh",
                         value=False,
                         label="Auto refresh",
-                        className="ms-3 mb-0 text-nowrap",
+                        # (centered like the fields next to it: by default bootstrap puts it a bit higher)
+                        className="ms-3 mb-0 text-nowrap d-flex align-items-center",
+                        input_style={"marginTop": 0},
+                        label_style={"marginLeft": "0.5em", "marginBottom": 0},
                         persistence=True,
                     ),
                     dcc.Input(
@@ -184,7 +187,6 @@ def graph_tab(config, refresh):
                         ),
                         dbc.Button("Browse…", id="directory-browse", n_clicks=0, color="secondary", disabled=not local),
                     ],
-                    size="sm",
                     className="mb-2",
                 ),
                 directory_browser(),
