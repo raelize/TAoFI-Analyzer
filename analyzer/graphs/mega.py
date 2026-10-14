@@ -6,10 +6,10 @@ from analyzer.graphs.common import (
     build_scatter,
     classification,
     color_traces,
-    shown_points,
     compact,
     legend_labels,
     message_figure,
+    shown_points,
     update_legend_labels,
 )
 

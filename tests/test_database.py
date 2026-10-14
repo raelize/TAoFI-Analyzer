@@ -22,11 +22,11 @@ from analyzer.database import (
     list_directory,
     load_dataframe,
     load_experiments,
-    run_query,
     match_hex,
     match_string,
     query_connection,
     query_error,
+    run_query,
 )
 from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, EXAMPLE_EXPERIMENTS, create_database
 

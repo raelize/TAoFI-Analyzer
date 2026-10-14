@@ -70,7 +70,9 @@ def run_with(environment):
         "print(json.dumps({**asdict(server_config), 'default_max_points': common.DEFAULT_MAX_POINTS}))"
     )
     environment = dict(os.environ, ANALYZER_DIRECTORY=EXAMPLE_DIRECTORY, **environment)
-    return subprocess.run([sys.executable, "-c", script], cwd=REPO, env=environment, capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, "-c", script], check=False, cwd=REPO, env=environment, capture_output=True, text=True
+    )
 
 
 def test_environment():

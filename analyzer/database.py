@@ -238,7 +238,7 @@ def get_parameters(database_path):
         with closing(connect(database_path)) as connection:
             with closing(connection.cursor()) as cursor:
                 cursor.execute("SELECT * FROM experiments")
-                parameters = list(next(zip(*cursor.description)))
+                parameters = list(next(zip(*cursor.description, strict=True)))
                 parameters.remove("response")
                 return parameters
     except Exception as e:
@@ -399,7 +399,7 @@ def load_experiments(database_path, query, after=0, responses=None):
             if rows and (rows[0][0] <= start or rows[-1][0] > end):
                 # e.g. "1) OR (1": not one condition, it escaped the range of rowids
                 raise ValueError("the query must be a condition on the experiments (e.g. delay > 100)")
-            for index, chunk in enumerate(list(zip(*rows))[1:]):
+            for index, chunk in enumerate(list(zip(*rows, strict=True))[1:]):
                 if index == response:
                     chunk = [responses.setdefault(r, r) for r in chunk]
                 values[index].extend(chunk)
@@ -418,7 +418,7 @@ def load_experiments(database_path, query, after=0, responses=None):
     finally:
         con.close()
 
-    return pd.DataFrame(dict(zip(columns, values)), columns=pd.Index(columns)), last
+    return pd.DataFrame(dict(zip(columns, values, strict=True)), columns=pd.Index(columns)), last
 
 
 def load_dataframe(database_path, query):

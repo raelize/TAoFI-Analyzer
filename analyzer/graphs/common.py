@@ -195,7 +195,7 @@ def plotted_at(dataset, row, columns, jitter, clicked):
 
 
 def count_colors(colors):
-    counts = {code: 0 for code in COLOR_ORDER}
+    counts = dict.fromkeys(COLOR_ORDER, 0)
     for code, mask in color_masks(colors).items():
         counts[code] = int(mask.sum())
     return counts
@@ -238,7 +238,7 @@ def legend_labels(colors, regexes, labels):
 
     result = {
         code: f"{label or regex or COLOR_MAP[code]} {share(counts[code])}"
-        for code, regex, label in zip(COLOR_CODES, regexes, labels)
+        for code, regex, label in zip(COLOR_CODES, regexes, labels, strict=True)
     }
     result["P"] = f"timeout {share(counts['P'])}"
     return result

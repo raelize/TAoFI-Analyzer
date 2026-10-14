@@ -120,7 +120,7 @@ class Dataset:
                 return colors
 
         colors = self.base_colors.copy()
-        for regex, code in zip(regexes, color_codes):
+        for regex, code in zip(regexes, color_codes, strict=True):
             if regex in [None, ""]:
                 continue
             try:

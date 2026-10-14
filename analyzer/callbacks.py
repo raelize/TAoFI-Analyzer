@@ -8,9 +8,8 @@ from typing import Any
 
 import dash_bootstrap_components as dbc
 import pandas as pd
-from dash import ALL, MATCH, Input, Output, State, html
+from dash import ALL, MATCH, Input, Output, State, html, no_update
 from dash import callback_context as ctx
-from dash import no_update
 from dash.exceptions import PreventUpdate
 from dash_ag_grid import AgGrid
 
@@ -29,12 +28,12 @@ from analyzer.database import (
     run_query,
 )
 from analyzer.dataset import DatasetError, get_dataset
-from analyzer.table import get_table
-from analyzer.layout import EXPERIMENT_HIDDEN, EXPERIMENT_SHOWN, axis_style, mega_style
-from analyzer.selection import SELECTABLE, describe, selection_key
-from analyzer.timing import register_timing, timed
 from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, PLOT_AXES, graph_axes
 from analyzer.graphs.common import clicked_experiment, message_figure, plotted_at, shown_points
+from analyzer.layout import EXPERIMENT_HIDDEN, EXPERIMENT_SHOWN, axis_style, mega_style
+from analyzer.selection import SELECTABLE, describe, selection_key
+from analyzer.table import get_table
+from analyzer.timing import register_timing, timed
 
 # the text fields of the graph tab; applied by Update or enter (see update_store())
 TEXT_FIELDS = (
@@ -332,7 +331,7 @@ def register_callbacks(app):
 
         config.directory = directory
         config.database = database
-        for axis, value in zip(AXES, axes):
+        for axis, value in zip(AXES, axes, strict=True):
             setattr(config, axis, value)
         config.mega = mega or None
         config.fixgreen = fixgreen
@@ -347,7 +346,7 @@ def register_callbacks(app):
             config.query = query
             config.jitter = jitter
             config.max_points = None if max_points is None else max(0, int(max_points))
-            for color, regex, label in zip(COLORS, regexes, labels):
+            for color, regex, label in zip(COLORS, regexes, labels, strict=True):
                 config.colors[color] = [regex, label]
             # (kept by the browser)
             applied = {
@@ -634,7 +633,7 @@ def register_callbacks(app):
         # (also called when the data tab is shown: the button is new then)
         if not n_clicks:
             raise PreventUpdate
-        return None
+        return
 
     # callback for the column selector of the data tab: show/hide columns without rebuilding the grid
     @app.callback(

@@ -142,12 +142,12 @@ class Table:
         page = self.df.iloc[page_indices]
         # NULL values as None (null in JSON), not NaN
         rows = page.astype(object).where(page.notna(), None).to_dict("records")
-        for row, index in zip(rows, page_indices):
+        for row, index in zip(rows, page_indices, strict=True):
             response = self.responses[index]
             row["rlen"] = len(response)
             row["response"] = self.decode(response)
             row["hex(response)"] = self.hexify(response)
-        return rows, int(len(indices))
+        return rows, len(indices)
 
 
 def per_response(responses, func):

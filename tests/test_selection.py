@@ -40,7 +40,7 @@ def test_lasso(config):
         get_dataset(config), config, selection(config, lasso={"x": [-0.5, 4.6, -0.5], "y": [-0.5, -0.5, 4.6]})
     )
     dataset = get_dataset(config)
-    points = set(zip(dataset.df["delay"][rows], dataset.df["length"][rows]))
+    points = set(zip(dataset.df["delay"][rows], dataset.df["length"][rows], strict=True))
     assert points == {(x, y) for x in range(5) for y in range(5) if x + y <= 4}
 
 

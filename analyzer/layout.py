@@ -490,7 +490,7 @@ def database_tab(config, refresh):
 
 
 def guide_tab(config, refresh):
-    with open(GUIDE, "r", encoding="utf-8") as f:
+    with open(GUIDE, encoding="utf-8") as f:
         guide_text = f.read()
     return [dbc.Card(dbc.CardBody(dcc.Markdown(guide_text)))]
 

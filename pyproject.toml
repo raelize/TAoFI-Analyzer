@@ -31,6 +31,13 @@ packages = ["analyzer", "analyzer.graphs"]
 [tool.ruff]
 line-length = 120
 
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF", "RET", "PERF", "PT", "PLE", "PLW"]
+ignore = [
+    "RUF001", "RUF002",  # the en dashes (1100–1500) and ellipses (counting…) in texts are intended
+    "PT018",  # assert a and b: fine in the tests
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
