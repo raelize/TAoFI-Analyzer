@@ -76,6 +76,8 @@ def page(server, browser):
     errors = []
     page.on("console", lambda m: (m.type == "error" or (m.type == "warning" and "AG Grid" in m.text)) and errors.append(m.text))
     page.on("response", lambda r: r.status >= 500 and errors.append(f"{r.status} {r.url}"))
+    # (uncaught errors, e.g. of plotly drawing a graph, don't show up as console errors)
+    page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(server)
     page.wait_for_function(GRAPH_READY, timeout=20000)
     yield page
@@ -219,6 +221,24 @@ def test_selecting_in_the_graph(page):
     page.click("#data-show-all")
     page.wait_for_function("!document.querySelector('#data-selection').innerText", timeout=10000)
     page.wait_for_function(f"(() => {{ const grid = document.querySelector('[id*=\"data-grid\"]'); return dash_ag_grid.getApi(grid.id).getDisplayedRowCount() > {selected}; }})()", timeout=10000)
+
+
+def choose(page, dropdown, value):
+    page.click(dropdown)
+    page.locator(dropdown).get_by_text(value, exact=True).click()
+
+
+def test_mega_graph_parameters(page):
+    drawn = f"{PLOT}.querySelectorAll('canvas').length > 0 && !{PLOT}.querySelector('.annotation-text')"
+    choose(page, "#graph-dropdown", "mega")
+    page.wait_for_function(f"{PLOT}.data.length && {PLOT}.data[0].type === 'splom' && {drawn}", timeout=20000)
+    assert page.evaluate(f"{PLOT}.data[0].dimensions.map(d => d.label)") == ["id", "delay", "length"]
+    # one parameter: a message, then two: one plot (not a scatter matrix: plotly can't draw that)
+    choose(page, "#mega-dropdown", "length")
+    page.wait_for_function(f"{PLOT}.querySelector('.annotation-text')", timeout=10000)
+    choose(page, "#mega-dropdown", "delay")
+    page.wait_for_function(f"{PLOT}.data.length && {PLOT}.data[0].type === 'scattergl' && {drawn}", timeout=10000)
+    assert page.evaluate(f"{PLOT}.layout.xaxis.title.text") == "length"
 
 
 def test_data_tab(page):

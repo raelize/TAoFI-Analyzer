@@ -207,6 +207,14 @@ def graph_tab(config, refresh):
                             options=[{"label": name, "value": name} for name in GRAPHS],
                             value=config.graph,
                         ),
+                        # the parameters of the mega graph (only shown for it)
+                        dcc.Dropdown(
+                            id="mega-dropdown",
+                            multi=True,
+                            placeholder="parameters (all number columns)",
+                            value=config.mega,
+                            style=mega_style(config.graph),
+                        ),
                         # (applied like the other fields; see graphs.common.max_points())
                         html.Span("max points", className="mx-2 text-muted align-self-center text-nowrap"),
                         html.Span(
@@ -314,6 +322,11 @@ def graph_tab(config, refresh):
 
     # (see the graph-store callback)
     return [query, selection, graph, recolor, dcc.Store(id="graph-store"), dcc.Store(id="graph-resized")]
+
+
+def mega_style(graph):
+    """The parameters of the mega graph are only shown for it."""
+    return {"width": "100%"} if graph == "mega" else {"display": "none"}
 
 
 def axis_style(graph, axis):

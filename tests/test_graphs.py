@@ -11,8 +11,10 @@ def test_mega_graph_parameters(tmp_path, make_database, request_from):
     make_database(columns=columns, rows=[(1, 10, 1.5, None, "a", "G", b"x"), (2, 20, 2.5, None, "b", "R", b"y")])
     with request_from("127.0.0.1"):
         dataset = get_dataset(AnalyzerConfig(directory=str(tmp_path), database="test.sqlite"))
-    # no id, text or empty columns
-    assert parameters(dataset) == ["delay", "voltage"]
+    # no text or empty columns
+    assert parameters(dataset) == ["id", "delay", "voltage"]
+    # chosen: in that order, as far as they are number columns
+    assert parameters(dataset, ["voltage", "note", "id", "empty", "nope"]) == ["voltage", "id"]
 
 
 def test_jitter_stays_the_same(tmp_path, make_database, request_from):

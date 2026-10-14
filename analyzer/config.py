@@ -17,6 +17,8 @@ class AnalyzerConfig:
     # the second plot of scatter2
     x2: str | None = None
     y2: str | None = None
+    # the parameters of the mega graph (None: all number columns)
+    mega: list[str] | None = None
     jitter: float = 0
     # the points a graph draws at most (None: the default, 0: all; see graphs.common.max_points())
     max_points: int | None = None

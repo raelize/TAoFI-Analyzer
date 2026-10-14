@@ -17,7 +17,7 @@ from analyzer.database import (counting, data_directory, database_path, file_key
                                get_parameters, is_local_request, list_directory, query_error, run_query)
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
-from analyzer.layout import EXPERIMENT_HIDDEN, EXPERIMENT_SHOWN, axis_style
+from analyzer.layout import EXPERIMENT_HIDDEN, EXPERIMENT_SHOWN, axis_style, mega_style
 from analyzer.selection import SELECTABLE, describe, selection_key
 from analyzer.timing import register_timing, timed
 from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, PLOT_AXES, graph_axes
@@ -210,6 +210,7 @@ def register_callbacks(app):
             store=Output("config-store", "data"),
             database=Output("database-dropdown", "value"),
             axes=[Output(f"{axis}-dropdown", "value") for axis in AXES],
+            mega=Output("mega-dropdown", "value"),
             applied=Output("applied-fields", "data"),
             fields=[Output(field, "value") for field in TEXT_FIELDS],
         ),
@@ -217,6 +218,7 @@ def register_callbacks(app):
             update=Input("update-button", "n_clicks"),
             database=Input("database-dropdown", "value"),
             axes=[Input(f"{axis}-dropdown", "value") for axis in AXES],
+            mega=Input("mega-dropdown", "value"),
             n_intervals=Input("refresh-timer", "n_intervals"),
             fixgreen=Input("switch-fixgreen", "value"),
             graph=Input("graph-dropdown", "value"),
@@ -234,7 +236,7 @@ def register_callbacks(app):
             applied=State("applied-fields", "data"),
         ),
     )
-    def update_store(update, database, axes, n_intervals, fixgreen, graph, directory, submits,
+    def update_store(update, database, axes, mega, n_intervals, fixgreen, graph, directory, submits,
                      query, store, jitter, max_points, regexes, labels, applied):
         config = AnalyzerConfig.from_store(store)
 
@@ -242,6 +244,7 @@ def register_callbacks(app):
             if fields is no_update:
                 fields = [no_update] * len(TEXT_FIELDS)
             return {"store": asdict(config), "database": database, "axes": [getattr(config, axis) for axis in AXES],
+                    "mega": config.mega,
                     "applied": applied, "fields": fields}
 
         directory = data_directory(directory)
@@ -293,6 +296,7 @@ def register_callbacks(app):
         config.database = database
         for axis, value in zip(AXES, axes):
             setattr(config, axis, value)
+        config.mega = mega or None
         config.fixgreen = fixgreen
         config.graph = graph
         config.argv = get_argv(path)
@@ -324,7 +328,7 @@ def register_callbacks(app):
 
     # callback for the axis lists
     @app.callback(
-        [Output(f"{axis}-dropdown", "options") for axis in AXES],
+        [Output(f"{axis}-dropdown", "options") for axis in AXES] + [Output("mega-dropdown", "options")],
         Input("database-dropdown", "value"),
         State("config-store", "data"),
         prevent_initial_call=True,
@@ -334,16 +338,16 @@ def register_callbacks(app):
         if path is None:
             raise PreventUpdate
         parameters = get_parameters(path)
-        return [parameters] * len(AXES)
+        return [parameters] * (len(AXES) + 1)
 
     # callback for showing the axis dropdowns the graph type uses
     @app.callback(
-        [Output(f"{axis}-dropdown", "style") for axis in AXES],
+        [Output(f"{axis}-dropdown", "style") for axis in AXES] + [Output("mega-dropdown", "style")],
         Input("graph-dropdown", "value"),
         prevent_initial_call=True,
     )
     def show_axes(graph):
-        return [axis_style(graph, axis) for axis in AXES]
+        return [axis_style(graph, axis) for axis in AXES] + [mega_style(graph)]
 
 
 
@@ -724,7 +728,8 @@ def experiment_card(dataset, config, index):
 
 def graph_revision(config):
     """What makes it another graph (with its own zoom); the same in the zoom-store callback."""
-    values = (config.directory, config.database, *[getattr(config, axis) for axis in AXES], config.graph)
+    values = (config.directory, config.database, *[getattr(config, axis) for axis in AXES], config.graph,
+              ",".join(config.mega or []))
     return "|".join("" if v is None else str(v) for v in values)
 
 

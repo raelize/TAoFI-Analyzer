@@ -32,7 +32,7 @@ The graph types:
   With a column named `x` on the x-axis or `y` on the y-axis (e.g. a scan over the positions of a chip), the graph is shown like an image: the x-axis at the top, the y-axis going down, in a fixed size of 1000 by 1000 pixels.
 - `scatter2`: two scatter plots next to each other, each with its own x and y parameter (the right one: `x-axis (right)`, `y-axis (right)`); hiding a color in the legend hides it in both
 - `3d`: the x, y and z parameters against each other (the z axis is only shown for this graph); drag to rotate, scroll to zoom
-- `mega`: every parameter (number column, except `id`) against every other one, one plot per pair; the axes aren't used
+- `mega`: every parameter (number column) against every other one, one plot per pair; the axes aren't used. Choose the parameters (and their order) next to the graph type; none chosen: all of them
 
 A browser takes long to draw many points: with more than 200000 experiments (100000 for `3d`; set another number in `max points` next to the graph type, 0 for all, or start the analyzer with `--max-points`) a sample is drawn, shown in the legend title (e.g. `Classification ( 1,000,000; 200,000 shown )`). Only the large classes are thinned out: every experiment of a small class (e.g. the few successful glitches) is drawn. The counts in the legend are of all experiments, and a selection in the graph includes the experiments that aren't drawn.
 

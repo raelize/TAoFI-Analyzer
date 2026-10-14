@@ -34,10 +34,10 @@ def select(client, store, trigger="update-button.n_clicks", **fields):
 
 
 def select_values(store, database=EXAMPLE_DATABASE, directory=None, query="", graph="scatter", fixgreen=True,
-                  x="delay", y="length", z=None, recolor=None):
+                  x="delay", y="length", z=None, mega=None, recolor=None):
     values = {
         "update-button.n_clicks": 1, "database-dropdown.value": database, "x-dropdown.value": x, "y-dropdown.value": y,
-        "z-dropdown.value": z,
+        "z-dropdown.value": z, "mega-dropdown.value": mega,
         "refresh-timer.n_intervals": None, "switch-fixgreen.value": fixgreen, "graph-dropdown.value": graph,
         "directory-input.value": directory or store["directory"], "query-input.value": query,
         "config-store.data": store, "jitter-input.value": 0,
@@ -159,7 +159,7 @@ def test_database_list_while_counting(client, tmp_path, make_database, monkeypat
 def test_axis_lists(client, store):
     code, response = client.call("x-dropdown.options", {"database-dropdown.value": EXAMPLE_DATABASE, "config-store.data": store}, "database-dropdown.value")
     assert response["x-dropdown"]["options"] == response["y-dropdown"]["options"] == ["id", "delay", "length", "color"]
-    for axis in ("z", "x2", "y2"):
+    for axis in ("z", "x2", "y2", "mega"):
         assert response[f"{axis}-dropdown"]["options"] == ["id", "delay", "length", "color"]
 
 
@@ -167,11 +167,11 @@ def test_axis_lists(client, store):
     ("scatter", ["x", "y"]),
     ("scatter2", ["x", "y", "x2", "y2"]),
     ("3d", ["x", "y", "z"]),
-    ("mega", []),
+    ("mega", ["mega"]),
 ])
 def test_only_the_axes_of_the_graph_type_are_shown(client, graph_type, shown):
     code, response = client.call("x-dropdown.style", {"graph-dropdown.value": graph_type}, "graph-dropdown.value")
-    visible = [axis for axis in ("x", "y", "z", "x2", "y2") if response[f"{axis}-dropdown"]["style"] != {"display": "none"}]
+    visible = [axis for axis in ("x", "y", "z", "x2", "y2", "mega") if response[f"{axis}-dropdown"]["style"] != {"display": "none"}]
     assert visible == shown
 
 
@@ -281,6 +281,14 @@ def test_text_fields_are_applied_with_update_or_enter(client, store, trigger, ap
     assert (new["colors"]["red"][0] == "x") is applied
 
 
+def test_mega_parameters_are_stored(client, store):
+    _, response = select(client, store, graph="mega", trigger="mega-dropdown.value", mega=["length", "id"])
+    assert response["config-store"]["data"]["mega"] == ["length", "id"]
+    # none chosen: all of them
+    _, response = select(client, store, graph="mega", trigger="mega-dropdown.value", mega=[])
+    assert response["config-store"]["data"]["mega"] is None
+
+
 def test_max_points_field(client, store):
     values = {**select_values(store), "max-points-input.value": 5000, "max-points-input.n_submit": 1}
     code, response = client.call("config-store.data", values, "max-points-input.n_submit")
@@ -388,15 +396,25 @@ def test_mega_graph(client, store):
     assert code == 200
     traces = response["graph"]["figure"]["data"]
     assert {trace["type"] for trace in traces} == {"splom"}
-    assert [d["label"] for d in traces[0]["dimensions"]] == ["delay", "length"]
+    assert [d["label"] for d in traces[0]["dimensions"]] == ["id", "delay", "length"]
     assert legend(response)[-1] == "all ( 3839 / 56.1% )"
+    # chosen parameters
+    code, response = graph(client, dict(store, graph="mega", mega=["length", "id", "delay"]))
+    assert [d["label"] for d in response["graph"]["figure"]["data"][0]["dimensions"]] == ["length", "id", "delay"]
+    # one pair: a plot of the first against the second
+    code, response = graph(client, dict(store, graph="mega", mega=["length", "delay"]))
+    figure = response["graph"]["figure"]
+    assert {trace["type"] for trace in figure["data"]} == {"scattergl"}
+    assert (figure["layout"]["xaxis"]["title"]["text"], figure["layout"]["yaxis"]["title"]["text"]) == ("length", "delay")
+    code, response = graph(client, dict(store, graph="mega", mega=["length", "color"]))
+    assert graph_message(response) == "Select at least two number columns for the mega graph (length)"
 
 
 def test_mega_graph_needs_two_parameters(client, tmp_path, make_database):
-    make_database("one.sqlite", columns="id integer, delay integer, color text, response blob", rows=[(1, 10, "G", b"x")])
+    make_database("one.sqlite", columns="delay integer, color text, response blob", rows=[(10, "G", b"x")])
     store = dict(client.layout_store(), directory=str(tmp_path), database="one.sqlite", graph="mega")
     code, response = graph(client, store)
-    assert graph_message(response) == "The mega graph needs at least two number columns besides id (delay)"
+    assert graph_message(response) == "The mega graph needs at least two number columns (delay)"
 
 
 def test_recolored_graph(client):
