@@ -657,6 +657,14 @@ def test_clicked_experiment_of_a_sample(client, tmp_path, make_database, monkeyp
     assert f"id {row}" in text(response["experiment"]["children"])
 
 
+def test_recolored_dots(client, store):
+    code, response = client.call(
+        "recolor-red-dot.style", {"graph-store.data": dict(store, colors={"red": ["crash", None]})}, "graph-store.data"
+    )
+    assert response["recolor-red-dot"]["style"]["background"] == "red"
+    assert response["recolor-green-dot"]["style"]["background"] == "transparent"
+
+
 def test_graph_without_hover(client, store):
     code, response = graph(client, store, hover=False)
     assert response["graph"]["figure"]["layout"]["hovermode"] is False

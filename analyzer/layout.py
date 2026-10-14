@@ -10,6 +10,7 @@ from dash.exceptions import PreventUpdate
 from analyzer.config import COLORS, AnalyzerConfig, server_config
 from analyzer.database import data_directory, get_databases, is_local_request
 from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, graph_axes
+from analyzer.graphs.common import COLOR_CODES, COLOR_MAP
 from analyzer.timing import timed
 
 # the guide tab (relative to the code, not the current directory)
@@ -307,29 +308,7 @@ def graph_tab(config, refresh):
                         className="d-inline-block me-3",
                     )
                 ),
-                html.Div(
-                    [
-                        component
-                        for color in COLORS
-                        for component in [
-                            dcc.Input(
-                                id=f"recolor-{color}",
-                                type="text",
-                                value=config.colors.get(color, [None, None])[0],
-                                placeholder=f"{color}",
-                                style={"width": "15%"},
-                            ),
-                            dcc.Input(
-                                id=f"recolor-{color}-label",
-                                type="text",
-                                value=config.colors.get(color, [None, None])[1],
-                                placeholder=f"{color}-label",
-                                style={"width": "15%", "margin-right": "10px", "margin-bottom": "10px"},
-                            ),
-                        ]
-                    ],
-                    className="mt-2",
-                ),
+                recolor_fields(config),
             ]
         )
     )
@@ -346,6 +325,46 @@ def mega_style(graph):
 def axis_style(graph, axis):
     """Axis dropdowns are only shown for the graph types that use them."""
     return {"width": "100%"} if axis in graph_axes(graph) else {"display": "none"}
+
+
+def recolor_fields(config):
+    """Per color a dot (filled when it's recolored, see recolor_dot()) with its regex and below it its label."""
+    groups = []
+    for color in COLORS:
+        regex, label = config.colors.get(color, [None, None])
+        fields = html.Div(
+            [
+                dbc.Input(id=f"recolor-{color}", value=regex, placeholder=color, size="sm"),
+                dbc.Input(
+                    id=f"recolor-{color}-label",
+                    value=label,
+                    placeholder="label",
+                    size="sm",
+                    style={"fontSize": "0.8rem", "color": "#666"},
+                ),
+            ],
+            className="d-flex flex-column gap-1",
+            style={"flex": 1, "minWidth": 0},
+        )
+        dot = html.Span(id=f"recolor-{color}-dot", style=recolor_dot(color, bool(regex)), title=color)
+        groups.append(
+            html.Div([dot, fields], className="d-flex align-items-center gap-1", style={"flex": 1, "minWidth": 0})
+        )
+    return html.Div(groups, className="d-flex gap-3 mt-2")
+
+
+def recolor_dot(color, recolored):
+    """The dot of a recolor color: filled when the color is recolored, else only its outline."""
+    swatch = COLOR_MAP[COLOR_CODES[COLORS.index(color)]]
+    return {
+        "display": "inline-block",
+        "width": "14px",
+        "height": "14px",
+        "flexShrink": 0,
+        "borderRadius": "50%",
+        "border": f"2px solid {swatch}",
+        "background": swatch if recolored else "transparent",
+    }
 
 
 def directory_browser():

@@ -42,7 +42,7 @@ To see the experiments in a region of the graph, select it with `Box Select` or 
 
 At the bottom of the graph you can recolor the experiments fed into the graph engine.
 
-The first field is the qualifier (i.e., `re.search(<qualifier>, response))`) and the second field is the label.
+Every color has two fields: the upper one is the qualifier (i.e., `re.search(<qualifier>, response))`), the lower one the label (shown in the legend). The dot of a color is filled when it is recolored.
 
 - `bla`: response contains `bla`
 - `\x41\x41`: response contains `AA`

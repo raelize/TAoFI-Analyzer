@@ -30,7 +30,7 @@ from analyzer.database import (
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, PLOT_AXES, graph_axes
 from analyzer.graphs.common import clicked_experiment, message_figure, plotted_at, shown_points
-from analyzer.layout import EXPERIMENT_HIDDEN, EXPERIMENT_SHOWN, axis_style, mega_style
+from analyzer.layout import EXPERIMENT_HIDDEN, EXPERIMENT_SHOWN, axis_style, mega_style, recolor_dot
 from analyzer.selection import SELECTABLE, describe, selection_key
 from analyzer.table import get_table
 from analyzer.timing import register_timing, timed
@@ -208,6 +208,15 @@ def register_callbacks(app):
             )
         path = [html.Code(directory), html.Span(f"  ({databases} databases here)", className="text-muted")]
         return path, items
+
+    # callback for the dots of the recolor fields: filled when the color is recolored (as applied)
+    @app.callback(
+        [Output(f"recolor-{color}-dot", "style") for color in COLORS],
+        Input("graph-store", "data"),
+    )
+    def show_recolored(store):
+        config = AnalyzerConfig.from_store(store)
+        return [recolor_dot(color, bool(config.colors.get(color, [None])[0])) for color in COLORS]
 
     # callback for the auto refresh timer
     @app.callback(
