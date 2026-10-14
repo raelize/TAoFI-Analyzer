@@ -5,16 +5,14 @@ bind = f"{os.getenv('ANALYZER_IP', '127.0.0.1')}:{os.getenv('ANALYZER_PORT', '93
 backlog = 2048
 
 # Worker processes
-workers = 4
+# One process with threads: loaded databases are cached per process, so each
+# extra worker would load (and keep) its own copy of a database in memory.
+workers = 1
 worker_class = "gthread"
 worker_connections = 1000
-threads = 2
+threads = 8
 timeout = 120
 keepalive = 5
-
-# Restart workers
-max_requests = 1000
-max_requests_jitter = 100
 
 # Logging
 accesslog = "-"
