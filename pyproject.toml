@@ -33,5 +33,10 @@ testpaths = ["tests"]
 pythonpath = ["."]
 # the browser tests need the "browser" dependency group and Chrome/Chromium:
 #   uv sync --group browser && uv run pytest -m browser
-addopts = "-m 'not browser'"
-markers = ["browser: drives the app in a real (headless) browser"]
+# the profile tests generate large databases (up to ~4 GB) and time loading them:
+#   uv run pytest -m profile -s
+addopts = "-m 'not browser and not profile'"
+markers = [
+    "browser: drives the app in a real (headless) browser",
+    "profile: times opening large databases",
+]
