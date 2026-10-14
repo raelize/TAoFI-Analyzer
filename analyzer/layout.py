@@ -16,6 +16,9 @@ from analyzer.timing import timed
 # the guide tab (relative to the code, not the current directory)
 GUIDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pages", "guide.md")
 
+# lower tabs than dash's (padding 25px)
+TAB_STYLE = {"padding": "8px"}
+
 # centered column used by the header, the tabs and their contents
 PAGE_STYLE = {"width": "80%", "border-style": "none", "margin": "0 auto"}
 
@@ -70,11 +73,14 @@ def create_layout(app):
                         id="tabs",
                         value="tab-graph",
                         children=[
-                            dcc.Tab(label="Graph", value="tab-graph"),
-                            dcc.Tab(label="Data", value="tab-data"),
-                            dcc.Tab(label="Information", value="tab-information"),
-                            dcc.Tab(label="Database", value="tab-database"),
-                            dcc.Tab(label="Guide", value="tab-guide"),
+                            dcc.Tab(label=label, value=value, style=TAB_STYLE, selected_style=TAB_STYLE)
+                            for label, value in [
+                                ("Graph", "tab-graph"),
+                                ("Data", "tab-data"),
+                                ("Information", "tab-information"),
+                                ("Database", "tab-database"),
+                                ("Guide", "tab-guide"),
+                            ]
                         ],
                     ),
                 ],
@@ -85,7 +91,7 @@ def create_layout(app):
         style={
             "width": "100%",
             "border-style": "none",
-            "margin-top": "100px",
+            "margin-top": "20px",
             "margin-bottom": "100px",
         },
     )
