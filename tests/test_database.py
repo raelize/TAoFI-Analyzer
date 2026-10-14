@@ -6,8 +6,8 @@ import pytest
 
 from analyzer import database
 from analyzer.config import server_config
-from analyzer.database import (available_memory, connect, data_directory, database_path, file_key, get_argv, get_databases,
-                               get_number_of_experiments, get_parameters, list_directory, load_dataframe,
+from analyzer.database import (appended_to, available_memory, connect, data_directory, database_path, file_key, get_argv, get_databases,
+                               get_number_of_experiments, get_parameters, list_directory, load_dataframe, load_experiments,
                                match_hex, match_string, query_connection, query_error)
 from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, EXAMPLE_EXPERIMENTS, create_database
 
@@ -167,6 +167,24 @@ def test_count_cache_keeps_one_entry_per_file(tmp_path):
     writer.close()
 
 
+def test_count_after_the_file_is_replaced(tmp_path):
+    path = str(tmp_path / "test.sqlite")
+    create_database(path, COLUMNS, [(i, 2, 3, "G", b"x") for i in range(5)]).close()
+    assert get_number_of_experiments(str(tmp_path), "test.sqlite") == 5
+    # a new file with the same name (and more experiments than the first had)
+    create_database(path + ".new", COLUMNS, [(i, 2, 3, "G", b"x") for i in range(7)]).close()
+    os.replace(path + ".new", path)
+    assert get_number_of_experiments(str(tmp_path), "test.sqlite") == 7
+
+
+def test_appended_to():
+    key = ("/db", 12, 1000, 4096)
+    assert appended_to(key, ("/db", 12, 2000, 8192))
+    assert appended_to(key, ("/db", 12, 2000, 4096, 3000, 512))  # WAL
+    assert not appended_to(key, ("/db", 13, 2000, 8192))  # another file
+    assert not appended_to(key, ("/db", 12, 2000, 2048))  # shrunk
+
+
 def test_example_database():
     path = os.path.join(EXAMPLE_DIRECTORY, EXAMPLE_DATABASE)
     assert get_number_of_experiments(EXAMPLE_DIRECTORY, EXAMPLE_DATABASE) == EXAMPLE_EXPERIMENTS
@@ -210,6 +228,47 @@ def test_load_dataframe_stops_before_running_out_of_memory(tmp_path, make_databa
     monkeypatch.setattr(database, "available_memory", lambda: database.MEMORY_RESERVE - 1)
     with pytest.raises(MemoryError, match="stopped after 2 experiments"):
         load_dataframe(path, "")
+
+
+def test_load_experiments_in_chunks(tmp_path, make_database, monkeypatch):
+    monkeypatch.setattr(database, "LOAD_CHUNK", 2)
+    make_database(rows=[(i, i, 3, "RGY"[i % 3], b"r%d" % (i % 2)) for i in range(1, 8)])
+    path = str(tmp_path / "test.sqlite")
+    df, last = load_experiments(path, "")
+    assert list(df.columns) == ["id", "delay", "length", "color", "response"]
+    assert list(df["id"]) == list(range(1, 8)) and last == 7
+    # only the experiments after a rowid; responses shared with the earlier ones
+    responses = {}
+    first, last = load_experiments(path, "", 0, responses)
+    more, _ = load_experiments(path, "", 5, responses)
+    assert list(more["id"]) == [6, 7]
+    assert more["response"][0] is first["response"][5]
+    # the query is one condition (OR doesn't escape the rowid range), comments are fine
+    df, last = load_experiments(path, "color = 'R' OR color = 'G' -- comment", 4)
+    assert list(df["id"]) == [6, 7] and last == 7
+    df, last = load_experiments(path, "id > 100", 0)
+    assert len(df) == 0 and list(df.columns)[0] == "id" and last == 0
+
+
+def test_writes_can_happen_while_loading(tmp_path, make_database, monkeypatch):
+    """A glitch script writing to the database (rollback journal) gets the lock between chunks."""
+    monkeypatch.setattr(database, "LOAD_CHUNK", 2)
+    make_database(rows=[(i, i, 3, "G", b"x") for i in range(7)])
+    path = str(tmp_path / "test.sqlite")
+    writer = sqlite3.connect(path, timeout=0)
+    writes = []
+
+    def write_between_chunks():
+        writer.execute("INSERT INTO experiments VALUES (100, 1, 1, 'R', x'00')")
+        writer.commit()
+        writes.append(1)
+
+    monkeypatch.setattr(database, "available_memory", write_between_chunks)
+    df = load_dataframe(path, "")
+    writer.close()
+    assert len(writes) >= 3
+    # experiments written during the load are part of it (except the one after the last chunk)
+    assert len(df) == 7 + len(writes) - 1
 
 
 def test_available_memory():

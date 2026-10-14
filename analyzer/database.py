@@ -12,9 +12,9 @@ from flask import has_request_context, request
 
 from analyzer.config import server_config
 
-_COUNT_CACHE = {}  # path -> (file_key, number of experiments)
+_COUNT_CACHE = {}  # path -> (file_key, number of experiments, last rowid)
 QUERY_TIMEOUT = 60  # seconds, for queries entered by the user
-LOAD_CHUNK = 10_000  # rows fetched at a time
+LOAD_CHUNK = 10_000  # experiments read at a time (with the read lock released in between)
 MEMORY_RESERVE = 256 * 2**20  # bytes a database load leaves free (for the rest of the analyzer and the system)
 
 
@@ -25,7 +25,8 @@ def file_key(path):
     database file itself only changes at a checkpoint), so that counts too.
     """
     st = os.stat(path)
-    key = (os.path.abspath(path), st.st_mtime_ns, st.st_size)
+    # (path, inode): the same file, not a new one with the same name
+    key = (os.path.abspath(path), st.st_ino, st.st_mtime_ns, st.st_size)
     try:
         wal = os.stat(path + "-wal")
         key += (wal.st_mtime_ns, wal.st_size)
@@ -116,15 +117,22 @@ def get_number_of_experiments(directory, database):
             return cached[1]
         with closing(connect(database_path)) as connection:
             with closing(connection.cursor()) as cursor:
-                cursor.execute("SELECT name FROM pragma_table_info('experiments')")
-                columns = {row[0] for row in cursor.fetchall()}
-                if not all(column in columns for column in REQUIRED_COLUMNS):
-                    count = None
+                if cached is not None and cached[1] is not None and appended_to(cached[0], key):
+                    # only count the new experiments (counting all of them reads the whole file)
+                    cursor.execute("SELECT count(*), max(rowid) FROM experiments WHERE rowid > ?", (cached[2],))
+                    new, last = cursor.fetchone()
+                    count, last = cached[1] + new, last or cached[2]
                 else:
-                    cursor.execute("SELECT COUNT(*) FROM experiments")
-                    count = cursor.fetchone()[0]
+                    cursor.execute("SELECT name FROM pragma_table_info('experiments')")
+                    columns = {row[0] for row in cursor.fetchall()}
+                    if not all(column in columns for column in REQUIRED_COLUMNS):
+                        count, last = None, None
+                    else:
+                        cursor.execute("SELECT count(*), max(rowid) FROM experiments")
+                        count, last = cursor.fetchone()
+                        last = last or 0
         # one entry per file (not per version), so a growing database doesn't grow the cache
-        _COUNT_CACHE[key[0]] = (key, count)
+        _COUNT_CACHE[key[0]] = (key, count, last)
         return count
     except Exception as e:
         print("ERROR (get_number_of_experiments): %s" % (e))
@@ -194,11 +202,15 @@ def query_connection(path):
     con.create_function("match_string", 2, match_string)
     con.create_function("match_hex", 2, match_hex)
 
-    # abort queries that run too long (they would block a server worker); sqlite
-    # raises "interrupted" when the handler returns True
+    set_deadline(con)
+    return con
+
+
+def set_deadline(con):
+    """Abort queries on ``con`` that run longer than QUERY_TIMEOUT from now (they would
+    block a server worker); sqlite raises "interrupted" when the handler returns True."""
     deadline = time.monotonic() + QUERY_TIMEOUT
     con.set_progress_handler(lambda: time.monotonic() > deadline, 100_000)
-    return con
 
 
 def available_memory():
@@ -224,25 +236,37 @@ def query_error(e):
     return str(e)
 
 
-def load_dataframe(database_path, query):
+def load_experiments(database_path, query, after=0, responses=None):
+    """The experiments after rowid ``after`` matching ``query``: (DataFrame, last rowid).
+
+    Read LOAD_CHUNK experiments at a time, each chunk by its own statement:
+    sqlite's read lock is released in between, so a glitch script writing to
+    the database (in rollback journal mode) only waits for one chunk instead of
+    the whole load (which would crash it once that takes longer than its timeout).
+
+    ``responses``: the distinct responses so far (response -> response); new
+    experiments share these, and new responses are added to it.
+    """
     con = query_connection(database_path)
+    # on its own line, so that a -- comment in the query doesn't hide the rest
+    condition = f"AND (\n{query}\n)" if query else ""
+    sql = f"SELECT rowid, * FROM experiments WHERE rowid > ? {condition} ORDER BY rowid LIMIT {LOAD_CHUNK}"
 
-    # perform the query based on the query extension
-    if query == "":
-        sql = "SELECT * FROM experiments;"
-    else:
-        sql = f"SELECT * FROM experiments WHERE {query};"
-
+    # one copy per distinct response: experiments mostly repeat a few
+    # responses, so memory depends on the distinct ones, not on the rows
+    if responses is None:
+        responses = {}
+    responses.setdefault(None, b"")
+    last = after
     try:
-        cursor = con.execute(sql)
-        columns = [d[0] for d in cursor.description]
+        cursor = con.execute(sql, (last,))
+        # the first column is the rowid
+        columns = [d[0] for d in cursor.description][1:]
         values = [[] for _ in columns]
         response = columns.index("response") if "response" in columns else None
-        # one copy per distinct response: experiments mostly repeat a few
-        # responses, so memory depends on the distinct ones, not on the rows
-        responses = {None: b""}
-        while rows := cursor.fetchmany(LOAD_CHUNK):
-            for index, chunk in enumerate(zip(*rows)):
+        while rows := cursor.fetchall():
+            last = rows[-1][0]
+            for index, chunk in enumerate(list(zip(*rows))[1:]):
                 if index == response:
                     chunk = [responses.setdefault(r, r) for r in chunk]
                 values[index].extend(chunk)
@@ -251,7 +275,33 @@ def load_dataframe(database_path, query):
             if available is not None and available < MEMORY_RESERVE:
                 raise MemoryError(f"not enough memory: stopped after {len(values[0])} experiments "
                                   f"({available // 2**20} MB left); use a query to load fewer experiments")
+            if len(rows) < LOAD_CHUNK:
+                break
+            # a new deadline per chunk: QUERY_TIMEOUT is about a single (runaway) query
+            set_deadline(con)
+            cursor = con.execute(sql, (last,))
     finally:
         con.close()
 
-    return pd.DataFrame(dict(zip(columns, values)), columns=columns)
+    return pd.DataFrame(dict(zip(columns, values)), columns=columns), last
+
+
+def load_dataframe(database_path, query):
+    """All experiments matching ``query``."""
+    return load_experiments(database_path, query)[0]
+
+
+def max_rowid(database_path):
+    """The highest rowid of the experiments (0 if there are none)."""
+    with closing(connect(database_path)) as connection:
+        return connection.execute("SELECT max(rowid) FROM experiments").fetchone()[0] or 0
+
+
+def appended_to(previous, current):
+    """Whether file version ``current`` (a file_key) can only differ from ``previous``
+    by experiments added to it: the same file (not replaced), that didn't shrink.
+
+    Experiments are only ever added by a glitch script; a database rewritten
+    in place (e.g. rows deleted) without shrinking isn't noticed.
+    """
+    return previous[:2] == current[:2] and current[3] >= previous[3]
