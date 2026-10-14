@@ -6,7 +6,7 @@ from dataclasses import asdict
 
 import dash_bootstrap_components as dbc
 import pandas as pd
-from dash import ALL, MATCH, Input, Output, State, html
+from dash import ALL, MATCH, Input, Output, State, dcc, html
 from dash import callback_context as ctx
 from dash import no_update
 from dash.exceptions import PreventUpdate
@@ -28,6 +28,8 @@ TEXT_FIELDS = ["query-input", "jitter-input"] + [f"recolor-{color}" for color in
 
 _PAGE_SIZE = 100
 _MAX_ROWS = 1000  # per request of the data grid
+# rows in a downloaded CSV file (a download is sent as one response)
+EXPORT_MAX_ROWS = 100_000
 
 
 def register_callbacks(app):
@@ -499,6 +501,35 @@ def register_callbacks(app):
 
         shown = [column for column in table.columns if column not in hidden]
         return grid, table.columns, shown, note, bar
+
+    # callback for downloading the data tab's rows (as shown: filtered, sorted, the visible columns)
+    @app.callback(
+        Output("data-download", "data"),
+        Output("data-download-note", "children"),
+        Input("data-download-button", "n_clicks"),
+        State({"type": "data-grid", "index": ALL}, "getRowsRequest"),
+        State("data-columns", "value"),
+        State("config-store", "data"),
+        State("switch-squeezedata", "value"),
+        State("response_s", "value"),
+        State("response_e", "value"),
+        State("selection-store", "data"),
+        prevent_initial_call=True,
+    )
+    def download_data(n_clicks, requests, shown, store, squeeze, response_s, response_e, selection):
+        config = AnalyzerConfig.from_store(store)
+        if not n_clicks or not config.database:
+            raise PreventUpdate
+        request = next((r for r in requests if r), {})
+        try:
+            table = get_table(get_dataset(config), config, squeeze, response_s, response_e, selection)
+        except DatasetError as e:
+            return no_update, str(e)
+        frame, count = table.export(request.get("sortModel") or [], request.get("filterModel") or {},
+                                    shown or table.columns, EXPORT_MAX_ROWS)
+        name = os.path.splitext(config.database)[0] + ("-squeezed" if squeeze else "") + ".csv"
+        note = f"the first {EXPORT_MAX_ROWS} of {count} rows" if count > EXPORT_MAX_ROWS else f"{count} rows"
+        return dcc.send_data_frame(frame.to_csv, name, index=False), note
 
     @app.callback(
         Output("selection-store", "data", allow_duplicate=True),

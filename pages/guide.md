@@ -64,6 +64,8 @@ For each row of data, you can:
 - wrap the response in the cell or not
 - slice the response or not
 
+`Download CSV` downloads the rows as shown: filtered, sorted and with the columns shown (at most 100000 rows).
+
 Use the column selector below the switches to choose which columns are shown (e.g., add `hex(response)` for a hex representation of the response). The selection is remembered by the browser.
 
 ...

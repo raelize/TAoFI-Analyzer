@@ -3,6 +3,7 @@
 Opt-in: uv sync --group browser && uv run pytest -m browser
 Uses the installed Chrome, or Playwright's Chromium (uv run playwright install chromium).
 """
+import csv
 import os
 import shutil
 import sqlite3
@@ -214,6 +215,19 @@ def test_data_tab(page):
     cells = page.eval_on_selector_all('.ag-row [col-id="delay &gt;"]', "cells => cells.map(c => c.innerText)")
     values = [int(c) for c in cells if c.strip()]
     assert values and all(v > 1900 for v in values)
+
+
+def test_download_csv(page):
+    open_tab(page, "Data")
+    page.wait_for_selector(".ag-row", timeout=20000)
+    with page.expect_download() as download:
+        page.click("#data-download-button")
+    with open(download.value.path(), newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert download.value.suggested_filename == EXAMPLE_DATABASE.replace(".sqlite", "-squeezed.csv")
+    # squeezed; the columns shown (not hex(response), hidden by default)
+    assert "hex(response)" not in rows[0] and "response" in rows[0]
+    assert sum(int(row["amount"]) for row in rows) == 6843
 
 
 def test_selection_survives_tab_switches(page):

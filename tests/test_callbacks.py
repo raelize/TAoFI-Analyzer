@@ -231,6 +231,23 @@ def test_data_of_a_selection(client, store):
     assert response["selection-store"]["data"] is None
 
 
+def test_download_data(client, store):
+    request = {"startRow": 0, "endRow": 100, "sortModel": [{"colId": "id", "sort": "desc"}],
+               "filterModel": {"delay": {"filterType": "number", "type": "lessThan", "filter": 1001}}}
+    values = {"data-download-button.n_clicks": 1, "data-columns.value": ["id", "delay", "rlen"], "config-store.data": store,
+              "switch-squeezedata.value": False, "response_s.value": None, "response_e.value": None, "selection-store.data": None}
+    ids = {f"{GRIDS}.getRowsRequest": [({"type": "data-grid", "index": "0-0-None-None-"}, request)]}
+    code, response = client.call("data-download.data", values, "data-download-button.n_clicks", ids)
+    assert code == 200
+    download = response["data-download"]["data"]
+    assert download["filename"] == EXAMPLE_DATABASE.replace(".sqlite", ".csv")
+    lines = download["content"].splitlines()
+    assert lines[0] == "id,delay,rlen"
+    ids = [int(line.split(",")[0]) for line in lines[1:]]
+    assert ids == sorted(ids, reverse=True) and all(int(line.split(",")[1]) < 1001 for line in lines[1:])
+    assert response["data-download-note"]["children"] == f"{len(ids)} rows"
+
+
 def test_data_tab_auto_refresh(client, tmp_path, make_database):
     make_database(rows=[(1, 1, 1, "G", b"x")])
     store = dict(client.layout_store(), directory=str(tmp_path), database="test.sqlite")

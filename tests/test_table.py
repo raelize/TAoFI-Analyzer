@@ -249,6 +249,17 @@ def test_unknown_filter_keeps_everything():
     assert list(grid_filter_mask(VALUES, {"filterType": "set", "type": "whatever"})) == [True] * 4
 
 
+def test_export(dataset):
+    table = build_table(dataset, dataset.base_colors, False, None, None)
+    frame, count = table.export([{"colId": "glitch_delay", "sort": "desc"}],
+                                {"response": {"filterType": "text", "type": "equals", "filter": "ok"}},
+                                ["id", "response", "hex(response)", "color"], 2)
+    assert count == 3
+    assert list(frame.columns) == ["id", "color", "response", "hex(response)"]
+    assert frame.to_dict("records") == [{"id": 4, "color": "Y", "response": "OK", "hex(response)": "4f 4b"},
+                                        {"id": 3, "color": "G", "response": "OK", "hex(response)": "4f 4b"}]
+
+
 def test_floats_round_trip(dataset):
     table = build_table(dataset, dataset.base_colors, False, None, None)
     assert not any(isinstance(v, float) and math.isnan(v) for v in rows(table)[0][0].values() if v is not None)

@@ -137,6 +137,22 @@ class Table:
             self._selection = (cache_key, indices)
         return indices
 
+    def export(self, sort_model, filter_model, columns, limit):
+        """The rows as the grid shows them (filtered and sorted), with ``columns``, as a
+        DataFrame of at most ``limit`` rows; and the number of rows there are."""
+        indices = self.select(sort_model, filter_model)
+        count = int(len(indices))
+        indices = indices[:limit]
+        frame = self.df.iloc[indices].reset_index(drop=True)
+        responses = self.responses[indices]
+        extra = {"rlen": lambda: [len(r) for r in responses],
+                 "response": lambda: per_response(responses, self.decode),
+                 "hex(response)": lambda: per_response(responses, self.hexify)}
+        for column, values in extra.items():
+            if column in columns:
+                frame[column] = values()
+        return frame[[column for column in self.columns if column in columns]], count
+
     def page(self, start, end, sort_model, filter_model):
         indices = self.select(sort_model, filter_model)
         page_indices = indices[start:end]
