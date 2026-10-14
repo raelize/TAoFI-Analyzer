@@ -177,27 +177,6 @@ def graph_tab(config, refresh):
                     ],
                     style={"display": "flex", "alignItems": "center"},
                 ),
-                # the query (applied with Update or enter)
-                html.Datalist(
-                    id="examples",
-                    children=[
-                        html.Option(value="match_string(response, 'ets')"),
-                        html.Option(value="match_hex(response, '661b')"),
-                        html.Option(value="color = 'G'"),
-                        html.Option(value="delay > 100"),
-                        html.Option(value="length > 100"),
-                    ],
-                ),
-                dcc.Input(
-                    id="query-input",
-                    type="text",
-                    list="examples",
-                    # (as applied; see update_store())
-                    value=config.query or "",
-                    style={"width": "100%"},
-                    className="mt-2",
-                    placeholder="SELECT * FROM experiments WHERE",
-                ),
             ]
         )
     )
@@ -205,12 +184,37 @@ def graph_tab(config, refresh):
     selection = dbc.Card(
         dbc.CardBody(
             [
-                dcc.Dropdown(
-                    id="database-dropdown",
-                    style={"width": "100%"},
-                    options=get_databases(data_directory(directory) or server_config.directory),
-                    placeholder="database",
-                    value=config.database,
+                # the database and the query (applied with Update or enter) on its experiments
+                html.Div(
+                    [
+                        dcc.Dropdown(
+                            id="database-dropdown",
+                            style={"flex": 1, "minWidth": 0},
+                            options=get_databases(data_directory(directory) or server_config.directory),
+                            placeholder="database",
+                            value=config.database,
+                        ),
+                        html.Datalist(
+                            id="examples",
+                            children=[
+                                html.Option(value="match_string(response, 'ets')"),
+                                html.Option(value="match_hex(response, '661b')"),
+                                html.Option(value="color = 'G'"),
+                                html.Option(value="delay > 100"),
+                                html.Option(value="length > 100"),
+                            ],
+                        ),
+                        dcc.Input(
+                            id="query-input",
+                            type="text",
+                            list="examples",
+                            # (as applied; see update_store())
+                            value=config.query or "",
+                            style={"flex": 1, "minWidth": 0, "height": "36px"},
+                            placeholder="SELECT * FROM experiments WHERE",
+                        ),
+                    ],
+                    className="d-flex gap-2",
                 ),
                 directory_browser(),
                 html.Div(
