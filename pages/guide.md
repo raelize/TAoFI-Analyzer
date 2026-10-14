@@ -36,7 +36,7 @@ The graph types:
 
 A browser takes long to draw many points: with more than 200000 experiments (100000 for `3d`; set another number in `max points` next to the graph type, 0 for all, or start the analyzer with `--max-points`) a sample is drawn, shown in the legend title (e.g. `Classification ( 1,000,000; 200,000 shown )`). Only the large classes are thinned out: every experiment of a small class (e.g. the few successful glitches) is drawn. The counts in the legend are of all experiments, and a selection in the graph includes the experiments that aren't drawn.
 
-Click a point in the graph to see its experiment below the graph: all its columns, its response (as text and hex) and how many experiments have the same response. This needs `Show hover info on the graph` to be on.
+Click a point in the graph to see its experiment next to the graph (close it with the `×`): all its columns, its response (as text and hex) and how many experiments have the same response. This needs `Show hover info on the graph` to be on.
 
 To see the experiments in a region of the graph, select it with `Box Select` or `Lasso Select` (in the toolbar of the graph; `scatter` and `scatter2`) and open the data tab: it shows only those experiments, until you click `Show all` there or select another region. Double click the graph to clear the selection.
 

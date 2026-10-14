@@ -17,7 +17,7 @@ from analyzer.database import (counting, data_directory, database_path, file_key
                                get_parameters, is_local_request, list_directory, query_error, run_query)
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
-from analyzer.layout import axis_style
+from analyzer.layout import EXPERIMENT_HIDDEN, EXPERIMENT_SHOWN, axis_style
 from analyzer.selection import SELECTABLE, describe, selection_key
 from analyzer.timing import register_timing, timed
 from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, PLOT_AXES, graph_axes
@@ -426,11 +426,43 @@ def register_callbacks(app):
     # callback for the experiment clicked in the graph
     @app.callback(
         Output("experiment", "children"),
+        Output("experiment-panel", "style"),
         Input("graph", "clickData"),
         State("config-store", "data"),
         prevent_initial_call=True,
     )
     def show_experiment(click, store):
+        return clicked_card(click, store), EXPERIMENT_SHOWN
+
+    @app.callback(
+        Output("experiment-panel", "style", allow_duplicate=True),
+        Input("experiment-close", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def close_experiment(n_clicks):
+        # (also called when the graph tab is shown: the button is new then)
+        if not n_clicks:
+            raise PreventUpdate
+        return EXPERIMENT_HIDDEN
+
+    # the graph takes the width the experiment panel leaves (its height is the graph type's)
+    app.clientside_callback(
+        """
+        function (style) {
+            const plot = document.querySelector("#graph .js-plotly-plot");
+            if (plot && plot._fullLayout) {
+                setTimeout(() => Plotly.Plots.resize(plot), 0);
+            }
+            return dash_clientside.no_update;
+        }
+        """,
+        Output("graph-resized", "data"),
+        Input("experiment-panel", "style"),
+        prevent_initial_call=True,
+    )
+
+    def clicked_card(click, store):
+        """The experiment of the point clicked in the graph (or why it can't be shown)."""
         points = (click or {}).get("points") or []
         if not points or not isinstance(points[0].get("pointNumber"), int):
             raise PreventUpdate
@@ -683,18 +715,11 @@ def experiment_card(dataset, config, index):
         return html.Pre(text, style={"whiteSpace": "pre-wrap", "wordBreak": "break-all", "maxHeight": "300px", **style},
                         className="border rounded p-2 mb-2")
 
-    return dbc.Card(
-        [
-            dbc.CardHeader("Experiment"),
-            dbc.CardBody(
-                [
-                    html.Table(html.Tbody(values), className="mb-2"),
-                    block(response.decode("utf-8", errors="replace")),
-                    block(response.hex(" "), fontFamily="monospace"),
-                ]
-            ),
-        ]
-    )
+    return [
+        html.Table(html.Tbody(values), className="mb-2"),
+        block(response.decode("utf-8", errors="replace")),
+        block(response.hex(" "), fontFamily="monospace"),
+    ]
 
 
 def graph_revision(config):

@@ -181,6 +181,13 @@ def test_clicking_a_point(page):
     page.mouse.click(box["x"] + x, box["y"] + y)
     page.wait_for_function("document.querySelector('#experiment').innerText.includes('the same for')", timeout=10000)
     assert "delay" in page.inner_text("#experiment")
+    # next to the graph, which makes room for it
+    width = f"{PLOT}._fullLayout.width"
+    page.wait_for_function(f"{width} < {box['width'] - 300}", timeout=5000)
+    assert page.is_visible("#experiment-panel")
+    page.click("#experiment-close")
+    page.wait_for_function(f"{width} > {box['width'] - 50}", timeout=5000)
+    assert not page.is_visible("#experiment-panel")
 
 
 def grid_rows(page):

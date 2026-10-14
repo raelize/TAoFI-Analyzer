@@ -19,7 +19,10 @@ PAGE_STYLE = {"width": "80%", "border-style": "none", "margin": "0 auto"}
 
 LOADING = {"type": "circle", "delay_show": 150}
 
-EXPERIMENT_HINT = "Click a point in the graph to see its experiment."
+# the panel of the experiment clicked in the graph
+EXPERIMENT_SHOWN = {"width": "420px", "flexShrink": 0, "maxHeight": "1000px", "overflowY": "auto"}
+EXPERIMENT_HIDDEN = {**EXPERIMENT_SHOWN, "display": "none"}
+
 
 
 def create_layout(app):
@@ -226,20 +229,42 @@ def graph_tab(config, refresh):
         )
     )
 
+    # the experiment clicked in the graph, next to it (see show_experiment()); hidden until then
+    experiment = html.Div(
+        [
+            html.Div(
+                [
+                    html.Strong("Experiment"),
+                    html.Button(id="experiment-close", n_clicks=0, className="btn-close", title="Close"),
+                ],
+                className="d-flex justify-content-between align-items-center mb-2",
+            ),
+            html.Div(id="experiment"),
+        ],
+        id="experiment-panel",
+        className="border rounded p-2 ms-2",
+        style=EXPERIMENT_HIDDEN,
+    )
+
     graph = dbc.Card(
         dbc.CardBody(
-            html.Center(
-                dcc.Loading(
-                    dcc.Graph(id="graph", config={"displayModeBar": True}, style={"width": "80%"}),
-                    overlay_style={"visibility": "visible", "opacity": 0.4},
-                    **LOADING,
-                ),
+            html.Div(
+                [
+                    html.Div(
+                        dcc.Loading(
+                            # (resized when the experiment is shown next to it, see resize_graph)
+                            dcc.Graph(id="graph", config={"displayModeBar": True}),
+                            overlay_style={"visibility": "visible", "opacity": 0.4},
+                            **LOADING,
+                        ),
+                        style={"flex": 1, "minWidth": 0},
+                    ),
+                    experiment,
+                ],
+                style={"display": "flex", "alignItems": "flex-start"},
             )
         )
     )
-
-    # the experiment clicked in the graph (see show_experiment())
-    experiment = html.Div(EXPERIMENT_HINT, id="experiment", className="text-muted m-2")
 
     recolor = dbc.Card(
         dbc.CardBody(
@@ -288,7 +313,7 @@ def graph_tab(config, refresh):
     )
 
     # (see the graph-store callback)
-    return [query, selection, graph, experiment, recolor, dcc.Store(id="graph-store")]
+    return [query, selection, graph, recolor, dcc.Store(id="graph-store"), dcc.Store(id="graph-resized")]
 
 
 def axis_style(graph, axis):
