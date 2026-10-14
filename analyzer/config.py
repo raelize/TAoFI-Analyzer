@@ -18,6 +18,8 @@ class AnalyzerConfig:
     x2: str | None = None
     y2: str | None = None
     jitter: float = 0
+    # the points a graph draws at most (None: the default, 0: all; see graphs.common.max_points())
+    max_points: int | None = None
     argv: str = ""
     query: str = ""
     dbkey: str = ""

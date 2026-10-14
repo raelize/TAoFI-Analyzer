@@ -13,7 +13,7 @@ def scatter2_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     color_labels = color_states[8:]
 
     colors = dataset.colors_for(config)
-    shown = shown_points(colors, "scatter2")
+    shown = shown_points(colors, config)
     fig = make_subplots(rows=1, cols=2, horizontal_spacing=0.06)
     for col, (xa, ya) in enumerate([(x, y), (config.x2, config.y2)], start=1):
         for trace in build_scatter(dataset, xa, ya, colors, config.jitter, shown=shown).data:

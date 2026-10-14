@@ -27,12 +27,13 @@ $ uv sync
 $ ./taofi-analyzer --help
 usage: analyzer [-h] [--ip IP] [--port PORT] [--x X] [--y Y] [--z Z] [--x2 X2]
                 [--y2 Y2] [--database DATABASE]
-                [--graph {scatter,scatter2,3d,mega}] [--debug] [--version]
+                [--graph {scatter,scatter2,3d,mega}] [--max-points N]
+                [--debug] [--version]
                 directory
 $ ./taofi-analyzer databases/
 ```
 
-The analyzer listens on `127.0.0.1:8000` by default (`--ip`/`--port`). Use `--database`, `--graph`, `--x`, `--y`, `--z`, `--x2` and `--y2` to preselect a database, the graph type and the axes (z: for the 3d graph; x2 and y2: the right plot of the scatter2 graph).
+The analyzer listens on `127.0.0.1:8000` by default (`--ip`/`--port`). Use `--database`, `--graph`, `--x`, `--y`, `--z`, `--x2` and `--y2` to preselect a database, the graph type and the axes (z: for the 3d graph; x2 and y2: the right plot of the scatter2 graph). `--max-points` sets the points a graph draws at most (default: 200000, 100000 for 3d; 0: all), unless set on the graph tab.
 
 For better performance you can use `gunicorn` instead of the built-in server:
 
@@ -43,7 +44,7 @@ For better performance you can use `gunicorn` instead of the built-in server:
 $ ANALYZER_DIRECTORY=<DIRECTORY> gunicorn taofi-analyzer:server
 ```
 
-With `gunicorn` the analyzer also listens on `127.0.0.1:8000` (`ANALYZER_IP`/`ANALYZER_PORT`). `ANALYZER_DATABASE`, `ANALYZER_GRAPH`, `ANALYZER_X`, `ANALYZER_Y`, `ANALYZER_Z`, `ANALYZER_X2` and `ANALYZER_Y2` preselect a database, the graph type and the axes.
+With `gunicorn` the analyzer also listens on `127.0.0.1:8000` (`ANALYZER_IP`/`ANALYZER_PORT`). `ANALYZER_DATABASE`, `ANALYZER_GRAPH`, `ANALYZER_X`, `ANALYZER_Y`, `ANALYZER_Z`, `ANALYZER_X2` and `ANALYZER_Y2` preselect a database, the graph type and the axes; `ANALYZER_MAX_POINTS` is `--max-points`.
 
 ## Security
 

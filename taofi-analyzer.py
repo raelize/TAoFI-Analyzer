@@ -9,7 +9,7 @@ from dash import Dash
 
 from analyzer.callbacks import register_callbacks
 from analyzer.config import server_config
-from analyzer.graphs import AXES, GRAPHS
+from analyzer.graphs import AXES, GRAPHS, common
 from analyzer.layout import create_layout
 
 #
@@ -61,13 +61,18 @@ AXIS_HELP = {
 }
 
 
-def setup(directory, database=None, graph=None, **axes):
+def setup(directory, database=None, graph=None, max_points=None, **axes):
     """Configure the analyzer (directory and presets) and create its page."""
     directory = os.path.abspath(directory)
     if not os.path.isdir(directory):
         raise FileNotFoundError(f"Directory {directory} does not exist.")
     if graph is not None and graph not in GRAPHS:
         raise ValueError(f"Unknown graph type {graph!r} (choose from {', '.join(GRAPHS)})")
+    if max_points is not None:
+        if not str(max_points).isdigit():
+            raise ValueError(f"The max points must be a number (0 for all), not {max_points!r}")
+        # (for every graph type, unless set on the graph tab)
+        common.DEFAULT_MAX_POINTS = int(max_points)
 
     server_config.directory = directory
     server_config.database = database
@@ -103,6 +108,8 @@ if __name__ == "__main__":
         parser.add_argument(f"--{axis}", required=False, help=AXIS_HELP[axis])
     parser.add_argument("--database", required=False, help="Preset the database")
     parser.add_argument("--graph", required=False, choices=list(GRAPHS), help="Preset the graph type")
+    parser.add_argument("--max-points", required=False, type=int, metavar="N",
+                        help="The points a graph draws at most (default: 200000, 100000 for 3d; 0: all)")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {PROJECT_METADATA['version']}"
@@ -110,7 +117,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    setup(args.directory, args.database, args.graph, **{axis: getattr(args, axis) for axis in AXES})
+    setup(args.directory, args.database, args.graph, args.max_points, **{axis: getattr(args, axis) for axis in AXES})
 
     # the built-in server is meant for a single (local) user; gunicorn is
     # documented for anything else, so leave out werkzeug's reminder of that
@@ -125,6 +132,7 @@ else:
         os.environ["ANALYZER_DIRECTORY"],
         os.environ.get("ANALYZER_DATABASE"),
         os.environ.get("ANALYZER_GRAPH"),
+        os.environ.get("ANALYZER_MAX_POINTS"),
         **{axis: os.environ.get(f"ANALYZER_{axis.upper()}") for axis in AXES},
     )
 

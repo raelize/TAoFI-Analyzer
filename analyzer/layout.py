@@ -191,15 +191,36 @@ def graph_tab(config, refresh):
                                          style=axis_style(config.graph, axis))
                             for axis in AXES
                         ],
-                        dcc.Input(id="jitter-input", type="number", value=config.jitter or 0, style={"width": "100%"}),
+                        html.Span("jitter", className="mx-2 text-muted align-self-center"),
+                        dcc.Input(id="jitter-input", type="number", value=config.jitter or 0, style={"width": "100px"}),
                     ],
                     style={"display": "flex"},
                 ),
-                dcc.Dropdown(
-                    id="graph-dropdown",
-                    style={"width": "100%"},
-                    options=[{"label": name, "value": name} for name in GRAPHS],
-                    value=config.graph,
+                html.Div(
+                    [
+                        dcc.Dropdown(
+                            id="graph-dropdown",
+                            style={"width": "100%"},
+                            options=[{"label": name, "value": name} for name in GRAPHS],
+                            value=config.graph,
+                        ),
+                        # (applied like the other fields; see graphs.common.max_points())
+                        html.Span("max points", className="mx-2 text-muted align-self-center text-nowrap"),
+                        html.Span(
+                            dcc.Input(
+                                id="max-points-input",
+                                type="number",
+                                min=0,
+                                step=1,
+                                value=config.max_points,
+                                placeholder="default",
+                                style={"width": "100px", "height": "100%"},
+                            ),
+                            title="The points the graph draws at most (a sample of the experiments): "
+                                  "empty for the default, 0 for all of them",
+                        ),
+                    ],
+                    style={"display": "flex"},
                 ),
             ]
         )

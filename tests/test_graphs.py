@@ -74,3 +74,31 @@ def test_graphs_draw_a_sample(tmp_path, make_database, request_from, monkeypatch
     drawn = [len(trace.x) if trace.type != "splom" else len(trace.dimensions[0].values) for trace in figure.data]
     assert all(30 < n < 90 for n in drawn)
     assert figure.layout.legend.title.text.startswith("Classification ( 500; ")
+
+
+def test_max_points(monkeypatch):
+    from analyzer.graphs import common
+    from analyzer.graphs.common import max_points
+
+    assert max_points(AnalyzerConfig(graph="scatter")) == 200_000
+    assert max_points(AnalyzerConfig(graph="3d")) == 100_000
+    # --max-points: for every graph type
+    monkeypatch.setattr(common, "DEFAULT_MAX_POINTS", 500_000)
+    assert max_points(AnalyzerConfig(graph="3d")) == 500_000
+    # the field of the graph tab
+    assert max_points(AnalyzerConfig(graph="3d", max_points=1000)) == 1000
+    # 0: all
+    assert max_points(AnalyzerConfig(graph="3d", max_points=0)) is None
+    monkeypatch.setattr(common, "DEFAULT_MAX_POINTS", 0)
+    assert max_points(AnalyzerConfig(graph="scatter")) is None
+
+
+def test_graph_with_max_points(tmp_path, make_database, request_from):
+    from analyzer.graphs import GRAPHS
+
+    make_database(rows=[(i, i, i, "G", b"x") for i in range(500)])
+    with request_from("127.0.0.1"):
+        for limit, drawn in [(50, range(25, 75)), (0, [500]), (None, [500])]:
+            config = AnalyzerConfig(directory=str(tmp_path), database="test.sqlite", x="delay", y="length", max_points=limit)
+            figure = GRAPHS["scatter"]("delay", "length", True, get_dataset(config), config, [], *[None] * 16)
+            assert len(figure.data[0].x) in drawn

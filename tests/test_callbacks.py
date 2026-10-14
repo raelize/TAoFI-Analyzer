@@ -281,6 +281,16 @@ def test_text_fields_are_applied_with_update_or_enter(client, store, trigger, ap
     assert (new["colors"]["red"][0] == "x") is applied
 
 
+def test_max_points_field(client, store):
+    values = {**select_values(store), "max-points-input.value": 5000, "max-points-input.n_submit": 1}
+    code, response = client.call("config-store.data", values, "max-points-input.n_submit")
+    assert response["config-store"]["data"]["max_points"] == 5000
+    assert response["applied-fields"]["data"]["max_points"] == 5000
+    # empty: the default
+    code, response = client.call("config-store.data", {**select_values(store), "max-points-input.value": None}, "update-button.n_clicks")
+    assert response["config-store"]["data"]["max_points"] is None
+
+
 def test_showing_the_graph_tab_doesnt_apply_the_text_fields(client, store):
     """Shown (again), all inputs of the graph tab count as triggered, the Update button (0 clicks) first."""
     values = {**select_values(store, query="typed"), "update-button.n_clicks": 0}
@@ -290,11 +300,12 @@ def test_showing_the_graph_tab_doesnt_apply_the_text_fields(client, store):
 
 def test_the_applied_text_fields_are_restored_on_a_new_page(client):
     """E.g. after a reload: the text fields as applied before (kept by the browser), not as typed."""
-    applied = {"query": "delay > 1", "jitter": 2, "colors": {"red": ["crash", "crashed"]}}
+    applied = {"query": "delay > 1", "jitter": 2, "max_points": 1000, "colors": {"red": ["crash", "crashed"]}}
     values = {"applied-fields.data": applied}
     code, response = client.call("config-store.data", {**select_values(client.layout_store(), query="typed"), **values}, None)
     store = response["config-store"]["data"]
     assert (store["query"], store["jitter"], store["colors"]["red"], store["fields_restored"]) == ("delay > 1", 2, ["crash", "crashed"], True)
+    assert store["max_points"] == response["max-points-input"]["value"] == 1000
     assert (response["query-input"]["value"], response["recolor-red"]["value"], response["recolor-red-label"]["value"]) == \
         ("delay > 1", "crash", "crashed")
     # applying them: kept by the browser

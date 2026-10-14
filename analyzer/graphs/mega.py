@@ -30,7 +30,7 @@ def mega_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     values = {column: axis_values(dataset, column, config.jitter) for column in columns}
 
     fig = go.Figure()
-    shown = shown_points(colors, "mega")
+    shown = shown_points(colors, config)
     for code, mask in color_traces(colors, shown):
         fig.add_trace(
             go.Splom(

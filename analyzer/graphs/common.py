@@ -91,6 +91,17 @@ MAX_POINTS = {
     "3d": 100_000,
     "mega": 200_000,
 }
+# instead of MAX_POINTS for every graph type (--max-points; 0: all)
+DEFAULT_MAX_POINTS = None
+
+
+def max_points(config):
+    """The points the graph of ``config`` draws at most (None: all): the max points
+    field of the graph tab, else the --max-points option, else MAX_POINTS."""
+    for limit in (config.max_points, DEFAULT_MAX_POINTS):
+        if limit is not None:
+            return int(limit) or None
+    return MAX_POINTS.get(config.graph)
 
 
 def sample(colors, limit):
@@ -117,9 +128,9 @@ def sample(colors, limit):
     return np.random.default_rng(0).random(count) < (drawn / sizes)[codes]
 
 
-def shown_points(colors, graph):
-    """The experiments graph type ``graph`` draws (see sample())."""
-    return sample(colors, MAX_POINTS.get(graph))
+def shown_points(colors, config):
+    """The experiments the graph of ``config`` draws (see sample())."""
+    return sample(colors, max_points(config))
 
 
 def classification(colors, shown):

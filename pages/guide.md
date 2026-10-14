@@ -16,7 +16,7 @@ With `Auto refresh` the graph is updated when the database changes (e.g., while 
 
 You can filter the database before it's fed into the graph engine by extending the query at the top.
 
-The query, jitter and recolor fields are applied with `Update` or by pressing enter in one of them. The browser remembers them as applied (e.g. after a reload of the page).
+The query, jitter, max points and recolor fields are applied with `Update` or by pressing enter in one of them. The browser remembers them as applied (e.g. after a reload of the page).
 
 Some examples include:
 
@@ -34,7 +34,7 @@ The graph types:
 - `3d`: the x, y and z parameters against each other (the z axis is only shown for this graph); drag to rotate, scroll to zoom
 - `mega`: every parameter (number column, except `id`) against every other one, one plot per pair; the axes aren't used
 
-A browser takes long to draw many points: with more than 200000 experiments (100000 for `3d`) a sample is drawn, shown in the legend title (e.g. `Classification ( 1,000,000; 200,000 shown )`). Only the large classes are thinned out: every experiment of a small class (e.g. the few successful glitches) is drawn. The counts in the legend are of all experiments, and a selection in the graph includes the experiments that aren't drawn.
+A browser takes long to draw many points: with more than 200000 experiments (100000 for `3d`; set another number in `max points` next to the graph type, 0 for all, or start the analyzer with `--max-points`) a sample is drawn, shown in the legend title (e.g. `Classification ( 1,000,000; 200,000 shown )`). Only the large classes are thinned out: every experiment of a small class (e.g. the few successful glitches) is drawn. The counts in the legend are of all experiments, and a selection in the graph includes the experiments that aren't drawn.
 
 Click a point in the graph to see its experiment below the graph: all its columns, its response (as text and hex) and how many experiments have the same response. This needs `Show hover info on the graph` to be on.
 

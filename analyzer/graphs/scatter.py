@@ -9,7 +9,7 @@ def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
 
     # recolor (vectorized: regexes run on the unique responses only)
     colors = dataset.colors_for(config)
-    shown = shown_points(colors, "scatter")
+    shown = shown_points(colors, config)
 
     try:
         fig = build_scatter(dataset, x, y, colors, config.jitter, shown=shown)

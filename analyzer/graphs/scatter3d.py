@@ -12,7 +12,7 @@ def scatter3d_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
 
     colors = dataset.colors_for(config)
     xv, yv, zv = (axis_values(dataset, axis, config.jitter) for axis in (x, y, z))
-    shown = shown_points(colors, "3d")
+    shown = shown_points(colors, config)
 
     fig = go.Figure()
     for code, mask in color_traces(colors, shown):

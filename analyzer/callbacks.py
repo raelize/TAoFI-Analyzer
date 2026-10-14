@@ -24,7 +24,8 @@ from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, PLOT_AXES, graph_axes
 from analyzer.graphs.common import clicked_experiment, message_figure, plotted_at, shown_points
 
 # the text fields of the graph tab; applied by Update or enter (see update_store())
-TEXT_FIELDS = ["query-input", "jitter-input"] + [f"recolor-{color}" for color in COLORS] + [f"recolor-{color}-label" for color in COLORS]
+TEXT_FIELDS = (["query-input", "jitter-input", "max-points-input"] + [f"recolor-{color}" for color in COLORS]
+               + [f"recolor-{color}-label" for color in COLORS])
 
 _PAGE_SIZE = 100
 _MAX_ROWS = 1000  # per request of the data grid
@@ -227,13 +228,14 @@ def register_callbacks(app):
             query=State("query-input", "value"),
             store=State("config-store", "data"),
             jitter=State("jitter-input", "value"),
+            max_points=State("max-points-input", "value"),
             regexes=[State(f"recolor-{color}", "value") for color in COLORS],
             labels=[State(f"recolor-{color}-label", "value") for color in COLORS],
             applied=State("applied-fields", "data"),
         ),
     )
     def update_store(update, database, axes, n_intervals, fixgreen, graph, directory, submits,
-                     query, store, jitter, regexes, labels, applied):
+                     query, store, jitter, max_points, regexes, labels, applied):
         config = AnalyzerConfig.from_store(store)
 
         def result(database=no_update, applied=no_update, fields=no_update):
@@ -255,6 +257,7 @@ def register_callbacks(app):
             applied = applied or {}
             config.query = applied.get("query") or ""
             config.jitter = applied.get("jitter") or 0
+            config.max_points = applied.get("max_points")
             for color in COLORS:
                 config.colors[color] = list((applied.get("colors") or {}).get(color) or [None, None])
             restored = text_fields(config)
@@ -301,10 +304,11 @@ def register_callbacks(app):
         if any(t["value"] and t["prop_id"].split(".")[0] in ("update-button", *TEXT_FIELDS) for t in ctx.triggered):
             config.query = query
             config.jitter = jitter
+            config.max_points = None if max_points is None else max(0, int(max_points))
             for color, regex, label in zip(COLORS, regexes, labels):
                 config.colors[color] = [regex, label]
             # (kept by the browser)
-            applied = {"query": config.query, "jitter": config.jitter, "colors": config.colors}
+            applied = {"query": config.query, "jitter": config.jitter, "max_points": config.max_points, "colors": config.colors}
 
         return result(config.database, applied, restored)
 
@@ -440,7 +444,7 @@ def register_callbacks(app):
         plots = PLOT_AXES.get(config.graph, [{}])
         colors = dataset.colors_for(config)
         clicked = clicked_experiment(colors, points[0].get("curveNumber", 0), points[0]["pointNumber"],
-                                     len(plots), shown_points(colors, config.graph))
+                                     len(plots), shown_points(colors, config))
         if clicked is not None:
             index, plot = clicked
             columns = {coordinate: getattr(config, axis) for coordinate, axis in plots[plot].items()}
@@ -635,7 +639,7 @@ def register_callbacks(app):
 
 def text_fields(config):
     """The values of the TEXT_FIELDS for ``config``."""
-    return ([config.query, config.jitter] + [config.colors[color][0] for color in COLORS]
+    return ([config.query, config.jitter, config.max_points] + [config.colors[color][0] for color in COLORS]
             + [config.colors[color][1] for color in COLORS])
 
 
