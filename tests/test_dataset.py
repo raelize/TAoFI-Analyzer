@@ -1,6 +1,8 @@
 import os
 import re
 import sqlite3
+import threading
+import time
 
 import numpy as np
 import pytest
@@ -221,3 +223,27 @@ def test_caches_are_emptied_when_memory_runs_out(config, monkeypatch, make_datab
     config.query = "delay > 1"
     with pytest.raises(dataset_module.DatasetError, match="not enough memory"):
         get_dataset(config)
+
+
+def test_one_load_at_a_time(config, loads, monkeypatch, request_from):
+    """Requests for a database that is being loaded wait for that load."""
+    load = dataset_module.load_experiments  # (counted by loads)
+
+    def slow_load(*args):
+        time.sleep(0.3)
+        return load(*args)
+
+    monkeypatch.setattr(dataset_module, "load_experiments", slow_load)
+    results = []
+
+    def request():
+        with request_from("127.0.0.1"):
+            results.append(get_dataset(config))
+
+    threads = [threading.Thread(target=request) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert loads == [0]
+    assert len(results) == 3 and results[0] is results[1] is results[2]
