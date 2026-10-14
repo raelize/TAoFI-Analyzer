@@ -9,6 +9,7 @@ from dash import Dash
 
 from analyzer.callbacks import register_callbacks
 from analyzer.config import server_config
+from analyzer.graphs import AXES
 from analyzer.layout import create_layout
 
 #
@@ -50,7 +51,17 @@ app.scripts.config.serve_locally = True
 server = app.server
 
 
-def setup(directory, database=None, x=None, y=None, z=None):
+# the axis presets (see AXES)
+AXIS_HELP = {
+    "x": "Preset the x parameter",
+    "y": "Preset the y parameter",
+    "z": "Preset the z parameter (3d graph)",
+    "x2": "Preset the x parameter of the right plot (scatter2 graph)",
+    "y2": "Preset the y parameter of the right plot (scatter2 graph)",
+}
+
+
+def setup(directory, database=None, **axes):
     """Configure the analyzer (directory and presets) and create its page."""
     directory = os.path.abspath(directory)
     if not os.path.isdir(directory):
@@ -58,9 +69,8 @@ def setup(directory, database=None, x=None, y=None, z=None):
 
     server_config.directory = directory
     server_config.database = database
-    server_config.x = x
-    server_config.y = y
-    server_config.z = z
+    for axis in AXES:
+        setattr(server_config, axis, axes.get(axis))
 
     register_callbacks(app)
     create_layout(app)
@@ -85,9 +95,8 @@ if __name__ == "__main__":
     parser.add_argument("--ip", help="Address to listen on", type=str, default="127.0.0.1")
     parser.add_argument("--port", help="Server port", type=int, default=8000)
     parser.add_argument("directory", help="Directory with the databases", type=str)
-    parser.add_argument("--x", required=False, help="Preset the x parameter")
-    parser.add_argument("--y", required=False, help="Preset the y parameter")
-    parser.add_argument("--z", required=False, help="Preset the z parameter (3d graph)")
+    for axis in AXES:
+        parser.add_argument(f"--{axis}", required=False, help=AXIS_HELP[axis])
     parser.add_argument("--database", required=False, help="Preset the database")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument(
@@ -96,7 +105,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    setup(args.directory, args.database, args.x, args.y, args.z)
+    setup(args.directory, args.database, **{axis: getattr(args, axis) for axis in AXES})
 
     # the built-in server is meant for a single (local) user; gunicorn is
     # documented for anything else, so leave out werkzeug's reminder of that
@@ -110,9 +119,7 @@ else:
     setup(
         os.environ["ANALYZER_DIRECTORY"],
         os.environ.get("ANALYZER_DATABASE"),
-        os.environ.get("ANALYZER_X"),
-        os.environ.get("ANALYZER_Y"),
-        os.environ.get("ANALYZER_Z"),
+        **{axis: os.environ.get(f"ANALYZER_{axis.upper()}") for axis in AXES},
     )
 
     # serve the index page once now: this registers the component script

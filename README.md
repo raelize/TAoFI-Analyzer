@@ -25,13 +25,13 @@ $ source .venv/bin/activate
 $ uv sync
 # 2. Run the analyzer:
 $ ./taofi-analyzer --help
-usage: analyzer [-h] [--ip IP] [--port PORT] [--x X] [--y Y] [--z Z]
-                [--database DATABASE] [--debug] [--version]
+usage: analyzer [-h] [--ip IP] [--port PORT] [--x X] [--y Y] [--z Z] [--x2 X2]
+                [--y2 Y2] [--database DATABASE] [--debug] [--version]
                 directory
 $ ./taofi-analyzer databases/
 ```
 
-The analyzer listens on `127.0.0.1:8000` by default (`--ip`/`--port`). Use `--database`, `--x`, `--y` and `--z` to preselect a database and the axes (z: for the 3d graph).
+The analyzer listens on `127.0.0.1:8000` by default (`--ip`/`--port`). Use `--database`, `--x`, `--y`, `--z`, `--x2` and `--y2` to preselect a database and the axes (z: for the 3d graph; x2 and y2: the right plot of the scatter2 graph).
 
 For better performance you can use `gunicorn` instead of the built-in server:
 
@@ -42,7 +42,7 @@ For better performance you can use `gunicorn` instead of the built-in server:
 $ ANALYZER_DIRECTORY=<DIRECTORY> gunicorn taofi-analyzer:server
 ```
 
-With `gunicorn` the analyzer also listens on `127.0.0.1:8000` (`ANALYZER_IP`/`ANALYZER_PORT`). `ANALYZER_DATABASE`, `ANALYZER_X`, `ANALYZER_Y` and `ANALYZER_Z` preselect a database and the axes.
+With `gunicorn` the analyzer also listens on `127.0.0.1:8000` (`ANALYZER_IP`/`ANALYZER_PORT`). `ANALYZER_DATABASE`, `ANALYZER_X`, `ANALYZER_Y`, `ANALYZER_Z`, `ANALYZER_X2` and `ANALYZER_Y2` preselect a database and the axes.
 
 ## Security
 

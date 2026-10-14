@@ -3,7 +3,6 @@
 Opt-in: uv sync --group browser && uv run pytest -m browser
 Uses the installed Chrome, or Playwright's Chromium (uv run playwright install chromium).
 """
-import socket
 import subprocess
 import sys
 import time
@@ -11,7 +10,7 @@ import urllib.request
 
 import pytest
 
-from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, REPO
+from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, REPO, free_port
 
 pytestmark = pytest.mark.browser
 
@@ -19,12 +18,6 @@ playwright_api = pytest.importorskip("playwright.sync_api")
 
 PLOT = "document.querySelector('#graph .js-plotly-plot')"
 GRAPH_READY = f"{PLOT} && {PLOT}.data && {PLOT}.data.length > 0"
-
-
-def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 @pytest.fixture(scope="module")

@@ -1,6 +1,7 @@
 """Shared fixtures: test databases, the app and a client for its callbacks."""
 import importlib
 import os
+import socket
 import sqlite3
 from contextlib import contextmanager
 
@@ -16,6 +17,13 @@ EXAMPLE_ARGV = "--target /dev/ttyUSB1 --delay 1000 2000 --length 1000 5000"
 
 # importing the app configures it from the environment (as gunicorn does)
 os.environ.setdefault("ANALYZER_DIRECTORY", EXAMPLE_DIRECTORY)
+
+
+def free_port():
+    """A TCP port nothing listens on (for starting the analyzer)."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def create_database(path, columns, rows=(), argv=None, wal=False):
