@@ -11,6 +11,7 @@ from analyzer.dataset import Dataset
 _TABLE_CACHE = OrderedDict()
 _TABLE_CACHE_SIZE = 3
 _CACHE_LOCK = threading.Lock()
+_FILTER_CHUNK = 1000  # distinct responses decoded at a time when filtering on them
 
 
 class Table:
@@ -29,6 +30,7 @@ class Table:
         self.numeric = set(numeric)
         self._text = None
         self._hex = None
+        self._distinct = None  # (codes, distinct responses)
         self._selection = None  # (sort_model, filter_model) -> row indices
         self._lock = threading.Lock()
 
@@ -57,6 +59,24 @@ class Table:
             self._hex = per_response(self.responses, self.hexify)
         return self._hex
 
+    def distinct_responses(self):
+        """(code per row, distinct responses)."""
+        if self._distinct is None:
+            codes, uniques = pd.factorize(self.responses, use_na_sentinel=False)
+            self._distinct = (codes, np.asarray(uniques, dtype=object))
+        return self._distinct
+
+    def response_mask(self, name, model):
+        """Filter mask for the response or hex column: per distinct response, a chunk at a time
+        (decoding all of them at once can take gigabytes)."""
+        convert = self.decode if name == "response" else self.hexify
+        codes, uniques = self.distinct_responses()
+        mask = np.empty(len(uniques), dtype=bool)
+        for start in range(0, len(uniques), _FILTER_CHUNK):
+            chunk = pd.Series([convert(r) for r in uniques[start:start + _FILTER_CHUNK]], dtype=object)
+            mask[start:start + len(chunk)] = grid_filter_mask(chunk, model)
+        return mask[codes]
+
     def column(self, name):
         if name == "response":
             return pd.Series(self.text_column())
@@ -76,6 +96,9 @@ class Table:
         mask = np.ones(len(self.responses), dtype=bool)
         for name, model in (filter_model or {}).items():
             if name not in self.columns:
+                continue
+            if name in ("response", "hex(response)"):
+                mask &= self.response_mask(name, model)
                 continue
             values = self.column(name)
             if values.dtype == object:
@@ -152,19 +175,23 @@ def grid_filter_mask(values, model):
             "inRange": lambda: (a >= f) & (a <= t),
         }
     else:
-        s = values.astype(str).str.lower()
+        # plain Python strings: pandas' .str keeps big columns alive in a reference cycle
+        s = [str(v).lower() for v in values]
         f = str(model.get("filter", "")).lower()
         ops = {
-            "contains": lambda: s.str.contains(f, regex=False),
-            "notContains": lambda: ~s.str.contains(f, regex=False),
-            "equals": lambda: s == f,
-            "notEqual": lambda: s != f,
-            "startsWith": lambda: s.str.startswith(f),
-            "endsWith": lambda: s.str.endswith(f),
+            "contains": lambda: [f in v for v in s],
+            "notContains": lambda: [f not in v for v in s],
+            "equals": lambda: [v == f for v in s],
+            "notEqual": lambda: [v != f for v in s],
+            "startsWith": lambda: [v.startswith(f) for v in s],
+            "endsWith": lambda: [v.endswith(f) for v in s],
         }
     if kind not in ops:
         return np.ones(len(values), dtype=bool)
-    return ops[kind]().fillna(False).to_numpy(dtype=bool)
+    result = ops[kind]()
+    if isinstance(result, pd.Series):
+        result = result.fillna(False)
+    return np.asarray(result, dtype=bool)
 
 
 def build_table(dataset, colors, squeeze_records, response_s, response_e):

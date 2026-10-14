@@ -3,6 +3,7 @@ import math
 import pandas as pd
 import pytest
 
+from analyzer import table as table_module
 from analyzer.config import AnalyzerConfig
 from analyzer.dataset import get_dataset
 from analyzer.table import build_table, get_table, grid_filter_mask, per_response
@@ -172,6 +173,15 @@ def test_text_filters_with_repeated_and_null_values(dataset):
     assert [row["id"] for row in page] == [1]
     page, count = rows(table, filters={"response": {"filterType": "text", "type": "blank"}})
     assert count == 0
+
+
+def test_response_filters_work_a_chunk_at_a_time(dataset, monkeypatch):
+    monkeypatch.setattr(table_module, "_FILTER_CHUNK", 1)
+    table = build_table(dataset, dataset.base_colors, False, None, None)
+    page, count = rows(table, filters={"response": {"filterType": "text", "type": "equals", "filter": "ok"}})
+    assert [row["id"] for row in page] == [1, 3, 4]
+    page, count = rows(table, filters={"hex(response)": {"filterType": "text", "type": "endsWith", "filter": "4c"}})
+    assert [row["id"] for row in page] == [2]
 
 
 def test_filtering_squeezed_min_max(dataset):
