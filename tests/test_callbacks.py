@@ -396,6 +396,12 @@ def test_recolored_graph(client):
     assert legend(response)[-1] == "^ ( 3839 / 56.1% )"
 
 
+def test_graph_without_a_database(client, store):
+    # e.g. after switching to another directory
+    code, response = graph(client, dict(store, database=None))
+    assert graph_message(response) == "Select a database"
+
+
 def test_graph_keeps_its_zoom(client, store):
     def revision(store):
         return graph(client, store)[1]["graph"]["figure"]["layout"]["uirevision"]

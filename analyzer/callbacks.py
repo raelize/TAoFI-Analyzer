@@ -361,7 +361,8 @@ def register_callbacks(app):
         labels = [config.colors.get(color, [None, None])[1] for color in COLORS]
 
         if not config.database:
-            raise PreventUpdate
+            # (e.g. after switching to another directory: not the graph of the previous database)
+            return message_figure("Select a database")
         axes = graph_axes(config.graph)
         missing = [axis for axis in axes if getattr(config, axis) is None]
         if missing:
