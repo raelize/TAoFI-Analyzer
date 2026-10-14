@@ -136,7 +136,19 @@ def test_database_list(client, tmp_path):
 def test_axis_lists(client, store):
     code, response = client.call("x-dropdown.options", {"database-dropdown.value": EXAMPLE_DATABASE, "config-store.data": store}, "database-dropdown.value")
     assert response["x-dropdown"]["options"] == response["y-dropdown"]["options"] == ["id", "delay", "length", "color"]
-    assert response["z-dropdown"]["options"] == ["id", "delay", "length", "color"]
+    for axis in ("z", "x2", "y2"):
+        assert response[f"{axis}-dropdown"]["options"] == ["id", "delay", "length", "color"]
+
+
+@pytest.mark.parametrize("graph_type, shown", [
+    ("scatter", ["x", "y"]),
+    ("3d", ["x", "y", "z"]),
+    ("mega", []),
+])
+def test_only_the_axes_of_the_graph_type_are_shown(client, graph_type, shown):
+    code, response = client.call("x-dropdown.style", {"graph-dropdown.value": graph_type}, "graph-dropdown.value")
+    visible = [axis for axis in ("x", "y", "z", "x2", "y2") if response[f"{axis}-dropdown"]["style"] != {"display": "none"}]
+    assert visible == shown
 
 
 def test_switch_directory(client, store, tmp_path, make_database):

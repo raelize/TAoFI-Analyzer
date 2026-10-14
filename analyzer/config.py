@@ -14,6 +14,9 @@ class AnalyzerConfig:
     x: str | None = None
     y: str | None = None
     z: str | None = None  # for the 3d graph
+    # the second plot of scatter2
+    x2: str | None = None
+    y2: str | None = None
     jitter: float = 0
     argv: str = ""
     query: str = ""

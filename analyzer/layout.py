@@ -8,7 +8,7 @@ from dash.exceptions import PreventUpdate
 
 from analyzer.config import COLORS, AnalyzerConfig, server_config
 from analyzer.database import data_directory, get_databases, is_local_request
-from analyzer.graphs import GRAPHS
+from analyzer.graphs import AXES, GRAPHS, graph_axes
 from analyzer.timing import timed
 
 # the guide tab (relative to the code, not the current directory)
@@ -166,9 +166,11 @@ def graph_tab(config):
                 ),
                 html.Div(
                     [
-                        dcc.Dropdown(id="x-dropdown", style={"width": "100%"}, placeholder="x-axis", value=config.x),
-                        dcc.Dropdown(id="y-dropdown", style={"width": "100%"}, placeholder="y-axis", value=config.y),
-                        dcc.Dropdown(id="z-dropdown", style={"width": "100%"}, placeholder="z-axis (3d)", value=config.z),
+                        *[
+                            dcc.Dropdown(id=f"{axis}-dropdown", placeholder=AXIS_PLACEHOLDERS[axis], value=getattr(config, axis),
+                                         style=axis_style(config.graph, axis))
+                            for axis in AXES
+                        ],
                         dcc.Input(id="jitter-input", type="number", value=config.jitter or 0, style={"width": "100%"}),
                     ],
                     style={"display": "flex"},
@@ -245,6 +247,14 @@ def graph_tab(config):
     )
 
     return [query, selection, graph, experiment, recolor]
+
+
+AXIS_PLACEHOLDERS = {"x": "x-axis", "y": "y-axis", "z": "z-axis", "x2": "x-axis (right)", "y2": "y-axis (right)"}
+
+
+def axis_style(graph, axis):
+    """Axis dropdowns are only shown for the graph types that use them."""
+    return {"width": "100%"} if axis in graph_axes(graph) else {"display": "none"}
 
 
 def directory_browser():

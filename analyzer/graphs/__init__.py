@@ -9,8 +9,15 @@ GRAPHS = {
     "mega": mega_func,
 }
 
-# the axes a graph type needs (others: x and y)
+# all axes, as selected on the graph tab (AnalyzerConfig fields)
+AXES = ("x", "y", "z", "x2", "y2")
+
+# the axes a graph type needs (others: x and y); only those are shown
 GRAPH_AXES = {
     "3d": ("x", "y", "z"),
     "mega": (),
 }
+
+
+def graph_axes(graph):
+    return GRAPH_AXES.get(graph, ("x", "y"))

@@ -15,8 +15,9 @@ from analyzer.database import (data_directory, database_path, file_key, get_argv
                                get_parameters, is_local_request, list_directory, query_connection, query_error)
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
+from analyzer.layout import axis_style
 from analyzer.timing import register_timing, timed
-from analyzer.graphs import GRAPH_AXES, GRAPHS
+from analyzer.graphs import AXES, GRAPHS, graph_axes
 from analyzer.graphs.common import clicked_experiment, message_figure
 
 # the text fields of the graph tab; applied by Update or enter (see update_store())
@@ -38,7 +39,7 @@ def register_callbacks(app):
             const triggered = dash_clientside.callback_context.triggered.map((t) => t.prop_id);
             const plot = document.querySelector("#graph .js-plotly-plot");
             // the graph keeps its zoom while this stays the same (see graph_revision())
-            const revision = store ? [store.directory, store.database, store.x, store.y, store.z, store.graph].join("|") : null;
+            const revision = store ? [store.directory, store.database, store.x, store.y, store.z, store.x2, store.y2, store.graph].join("|") : null;
             if (triggered.includes("config-store.data")) {
                 // e.g. auto refresh: still zoomed in the same graph; otherwise another graph, not zoomed
                 return zoomed && zoomed.revision === revision ? dash_clientside.no_update : null;
@@ -48,7 +49,8 @@ def register_callbacks(app):
                 return null;
             }
             const zoom = {};
-            for (const axis of ["xaxis", "yaxis"]) {
+            // (xaxis2/yaxis2: the second plot of scatter2)
+            for (const axis of ["xaxis", "yaxis", "xaxis2", "yaxis2"]) {
                 const layout = plot.layout[axis];
                 if (layout && !layout.autorange && layout.range) {
                     zoom[axis] = layout.range.slice();
@@ -74,9 +76,10 @@ def register_callbacks(app):
         if not zoom:
             return "Zoom into the graph to see the selected range here."
 
-        names = {"xaxis": store.get("x"), "yaxis": store.get("y")}
+        names = {"xaxis": store.get("x"), "yaxis": store.get("y"), "xaxis2": store.get("x2"), "yaxis2": store.get("y2")}
+        axes = ["xaxis", "yaxis"] + (["xaxis2", "yaxis2"] if store.get("graph") == "scatter2" else [])
         p = ""
-        for axis in ("xaxis", "yaxis"):
+        for axis in axes:
             if axis in zoom:
                 low, high = (f"{v:g}" if isinstance(v, (int, float)) else str(v) for v in zoom[axis])
                 p += f"* {names[axis]}: {low} – {high}\n"
@@ -187,16 +190,12 @@ def register_callbacks(app):
         output=[
             Output("config-store", "data"),
             Output("database-dropdown", "value"),
-            Output("x-dropdown", "value"),
-            Output("y-dropdown", "value"),
-            Output("z-dropdown", "value"),
+            *[Output(f"{axis}-dropdown", "value") for axis in AXES],
         ],
         inputs=dict(
             update=Input("update-button", "n_clicks"),
             database=Input("database-dropdown", "value"),
-            x=Input("x-dropdown", "value"),
-            y=Input("y-dropdown", "value"),
-            z=Input("z-dropdown", "value"),
+            axes=[Input(f"{axis}-dropdown", "value") for axis in AXES],
             n_intervals=Input("refresh-timer", "n_intervals"),
             fixgreen=Input("switch-fixgreen", "value"),
             graph=Input("graph-dropdown", "value"),
@@ -212,7 +211,7 @@ def register_callbacks(app):
             labels=[State(f"recolor-{color}-label", "value") for color in COLORS],
         ),
     )
-    def update_store(update, database, x, y, z, n_intervals, fixgreen, graph, directory, submits,
+    def update_store(update, database, axes, n_intervals, fixgreen, graph, directory, submits,
                      query, store, jitter, regexes, labels):
         config = AnalyzerConfig.from_store(store)
 
@@ -226,7 +225,7 @@ def register_callbacks(app):
             config.database = None
             config.dbkey = ""
             config.argv = ""
-            return asdict(config), None, config.x, config.y, config.z
+            return asdict(config), None, *[getattr(config, axis) for axis in AXES]
 
         if database is None:
             raise PreventUpdate
@@ -245,9 +244,8 @@ def register_callbacks(app):
 
         config.directory = directory
         config.database = database
-        config.x = x
-        config.y = y
-        config.z = z
+        for axis, value in zip(AXES, axes):
+            setattr(config, axis, value)
         config.fixgreen = fixgreen
         config.graph = graph
         config.argv = get_argv(path)
@@ -261,7 +259,7 @@ def register_callbacks(app):
             for color, regex, label in zip(COLORS, regexes, labels):
                 config.colors[color] = [regex, label]
 
-        return asdict(config), config.database, config.x, config.y, config.z
+        return asdict(config), config.database, *[getattr(config, axis) for axis in AXES]
 
     # callback for printing the argv string at the bottom; also runs when the
     # information tab is opened (its input already exists, only the output is new)
@@ -273,11 +271,9 @@ def register_callbacks(app):
         config = AnalyzerConfig.from_store(store)
         return config.argv
 
-    # callback for the x, y and z lists
+    # callback for the axis lists
     @app.callback(
-        Output("x-dropdown", "options"),
-        Output("y-dropdown", "options"),
-        Output("z-dropdown", "options"),
+        [Output(f"{axis}-dropdown", "options") for axis in AXES],
         Input("database-dropdown", "value"),
         State("config-store", "data"),
         prevent_initial_call=True,
@@ -287,7 +283,16 @@ def register_callbacks(app):
         if path is None:
             raise PreventUpdate
         parameters = get_parameters(path)
-        return parameters, parameters, parameters
+        return [parameters] * len(AXES)
+
+    # callback for showing the axis dropdowns the graph type uses
+    @app.callback(
+        [Output(f"{axis}-dropdown", "style") for axis in AXES],
+        Input("graph-dropdown", "value"),
+        prevent_initial_call=True,
+    )
+    def show_axes(graph):
+        return [axis_style(graph, axis) for axis in AXES]
 
 
 
@@ -308,7 +313,7 @@ def register_callbacks(app):
         regexes = [config.colors.get(color, [None, None])[0] for color in COLORS]
         labels = [config.colors.get(color, [None, None])[1] for color in COLORS]
 
-        axes = GRAPH_AXES.get(config.graph, ("x", "y"))
+        axes = graph_axes(config.graph)
         missing = [axis for axis in axes if getattr(config, axis) is None]
         if missing:
             return message_figure(f"Select the {' and '.join(missing)} axis to show the {config.graph} graph")
@@ -525,7 +530,8 @@ def experiment_card(dataset, config, index):
 
 def graph_revision(config):
     """What makes it another graph (with its own zoom); the same in the zoom-store callback."""
-    return "|".join("" if v is None else str(v) for v in (config.directory, config.database, config.x, config.y, config.z, config.graph))
+    values = (config.directory, config.database, *[getattr(config, axis) for axis in AXES], config.graph)
+    return "|".join("" if v is None else str(v) for v in values)
 
 
 def column_defs(table, wraptext, hidden):
