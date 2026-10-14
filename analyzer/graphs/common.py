@@ -116,6 +116,29 @@ def build_scatter(dataset, x, y, colors, jitter, labels=None):
     return fig
 
 
+def legend_labels(colors, regexes, labels):
+    """Legend label per color code: the recolor label (or regex) with its count and share."""
+    counts = count_colors(colors)
+    total = len(colors)
+
+    def share(count):
+        return f"( {count} / {count / total if total else 0:.1%} )"
+
+    result = {code: f"{label or regex} {share(counts[code])}" for code, regex, label in zip(COLOR_CODES, regexes, labels)}
+    result["P"] = f"timeout {share(counts['P'])}"
+    return result
+
+
+def message_figure(message):
+    """An empty graph showing ``message`` (e.g. why the database can't be shown)."""
+    fig = go.Figure()
+    fig.add_annotation(text=message, showarrow=False, font={"size": 16, "color": "#c0392b"},
+                       xref="paper", yref="paper", x=0.5, y=0.5)
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+    return fig
+
+
 def update_legend_labels(fig, labels):
     for entry in fig.data:
         if entry["name"] in labels:

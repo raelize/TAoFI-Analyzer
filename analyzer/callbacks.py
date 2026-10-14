@@ -4,7 +4,6 @@ from dataclasses import asdict
 
 import dash_bootstrap_components as dbc
 import pandas as pd
-import plotly.graph_objects as go
 from dash import ALL, MATCH, Input, Output, State, html
 from dash import callback_context as ctx
 from dash import no_update
@@ -18,6 +17,7 @@ from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
 from analyzer.timing import register_timing, timed
 from analyzer.graphs import GRAPHS
+from analyzer.graphs.common import message_figure
 
 _PAGE_SIZE = 100
 _MAX_ROWS = 1000  # per request of the data grid
@@ -429,16 +429,6 @@ def register_callbacks(app):
             con.close()
 
         return df.to_string(index=False)
-
-
-def message_figure(message):
-    """An empty graph showing ``message`` (e.g. why the database can't be shown)."""
-    fig = go.Figure()
-    fig.add_annotation(text=message, showarrow=False, font={"size": 16, "color": "#c0392b"},
-                       xref="paper", yref="paper", x=0.5, y=0.5)
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False)
-    return fig
 
 
 def column_defs(table, wraptext, hidden):

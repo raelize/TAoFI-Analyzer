@@ -1,7 +1,6 @@
 from dash.exceptions import PreventUpdate
 
-from analyzer.graphs.common import (COLOR_CODES, RECOLOR_FLAGS, build_scatter,
-                           count_colors, update_legend_labels)
+from analyzer.graphs.common import COLOR_CODES, RECOLOR_FLAGS, build_scatter, legend_labels, update_legend_labels
 
 
 def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
@@ -10,7 +9,6 @@ def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
 
     # recolor (vectorized: regexes run on the unique responses only)
     colors = dataset.recolor(color_values, COLOR_CODES, fixgreen, RECOLOR_FLAGS["scatter"])
-    counts = count_colors(colors)
     total_records = len(colors)
 
     try:
@@ -48,19 +46,6 @@ def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
         # TODO: need to check if this is actually keeping the aspect ratio correctly
         fig.update_layout(width=1000, height=1000, autosize=False)
 
-    # Build legend labels with counts and percentages
-    labels = {}
-    for color_code, value, label in zip(COLOR_CODES, color_values, color_labels):
-        count = counts[color_code]
-        display_label = label if label else value
-        percentage = count / total_records if total_records else 0
-        labels[color_code] = f"{display_label} ( {count} / {percentage:.1%} )"
-
-    # Add special label for timeout
-    timeout_count = counts["P"]
-    timeout_pct = timeout_count / total_records if total_records else 0
-    labels["P"] = f"timeout ( {timeout_count} / {timeout_pct:.1%} )"
-
-    update_legend_labels(fig, labels)
+    update_legend_labels(fig, legend_labels(colors, color_values, color_labels))
 
     return fig
