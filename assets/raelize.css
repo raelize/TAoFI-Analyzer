@@ -6,3 +6,82 @@
 #data .ag-theme-quartz {
     --ag-font-family: ui-monospace, "SFMono-Regular", "DejaVu Sans Mono", Menlo, Consolas, monospace;
 }
+
+/* the rows of the data tab: a background per color code (see data_grid()) */
+.ag-theme-quartz .ag-row.row-P { background-color: #fde2ec; }
+.ag-theme-quartz .ag-row.row-G { background-color: #d5f5e3; }
+.ag-theme-quartz .ag-row.row-Y { background-color: #fcf3cf; }
+.ag-theme-quartz .ag-row.row-M { background-color: #f6d9ec; }
+.ag-theme-quartz .ag-row.row-O { background-color: #fae5d3; }
+.ag-theme-quartz .ag-row.row-C { background-color: #d1f2f5; }
+.ag-theme-quartz .ag-row.row-B { background-color: #d4e6f1; }
+.ag-theme-quartz .ag-row.row-Z { background-color: #d6dbdf; }
+.ag-theme-quartz .ag-row.row-R { background-color: #fadbd8; }
+
+/*
+ * Dark mode (the button in the header sets data-bs-theme): bootstrap follows
+ * it, the rest gets its colors here.
+ */
+[data-bs-theme=dark] {
+    /* the browser's own fields and buttons (Update, Browse, the query, ...) */
+    color-scheme: dark;
+}
+
+[data-bs-theme=dark] .ag-row.row-P { background-color: #4a2836; }
+[data-bs-theme=dark] .ag-row.row-G { background-color: #1e3d28; }
+[data-bs-theme=dark] .ag-row.row-Y { background-color: #4a4018; }
+[data-bs-theme=dark] .ag-row.row-M { background-color: #4a1f3d; }
+[data-bs-theme=dark] .ag-row.row-O { background-color: #4d3018; }
+[data-bs-theme=dark] .ag-row.row-C { background-color: #163f44; }
+[data-bs-theme=dark] .ag-row.row-B { background-color: #1b3150; }
+[data-bs-theme=dark] .ag-row.row-Z { background-color: #3a3d40; }
+[data-bs-theme=dark] .ag-row.row-R { background-color: #4d2020; }
+
+/* AG Grid (the data and database tabs) */
+[data-bs-theme=dark] .ag-theme-quartz {
+    --ag-background-color: var(--bs-body-bg);
+    --ag-foreground-color: var(--bs-body-color);
+    --ag-data-color: var(--bs-body-color);
+    --ag-header-background-color: var(--bs-tertiary-bg);
+    --ag-header-foreground-color: var(--bs-body-color);
+    --ag-secondary-foreground-color: var(--bs-secondary-color);
+    --ag-border-color: var(--bs-border-color);
+    --ag-row-border-color: var(--bs-border-color);
+    --ag-odd-row-background-color: var(--bs-body-bg);
+    --ag-row-hover-color: rgba(255, 255, 255, 0.06);
+    --ag-control-panel-background-color: var(--bs-tertiary-bg);
+    --ag-input-border-color: var(--bs-border-color);
+    --ag-checkbox-background-color: var(--bs-body-bg);
+}
+
+/* dash's dropdowns (react-select) */
+[data-bs-theme=dark] .Select-control,
+[data-bs-theme=dark] .Select-menu-outer,
+[data-bs-theme=dark] .VirtualizedSelectOption {
+    background-color: var(--bs-body-bg) !important;
+    color: var(--bs-body-color) !important;
+    border-color: var(--bs-border-color) !important;
+}
+[data-bs-theme=dark] .Select-value-label,
+[data-bs-theme=dark] .Select-input > input {
+    color: var(--bs-body-color) !important;
+}
+[data-bs-theme=dark] .VirtualizedSelectFocusedOption {
+    background-color: var(--bs-tertiary-bg) !important;
+}
+[data-bs-theme=dark] .Select--multi .Select-value {
+    background-color: #1d3557;
+    border-color: #2f5b8f;
+    color: #cfe3ff;
+}
+
+/* dash's tabs */
+[data-bs-theme=dark] #tabs .tab {
+    background-color: var(--bs-tertiary-bg) !important;
+    color: var(--bs-body-color) !important;
+    border-color: var(--bs-border-color) !important;
+}
+[data-bs-theme=dark] #tabs .tab--selected {
+    background-color: var(--bs-body-bg) !important;
+    border-bottom-color: var(--bs-body-bg) !important;
+}

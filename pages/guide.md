@@ -4,6 +4,8 @@
 
 This is the manual the Raelize TAoFI-Analyzer.
 
+The button at the top right switches between light and dark mode (the browser remembers it).
+
 ## Graph
 
 ---

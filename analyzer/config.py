@@ -43,17 +43,3 @@ class AnalyzerConfig:
 # Server side settings (directory and presets from the command line or the
 # environment); also the initial config-store of every browser tab.
 server_config = AnalyzerConfig()
-
-
-# light background per color code for the rows of the data tab
-ROW_COLORS = {
-    "P": "#fde2ec",
-    "G": "#d5f5e3",
-    "Y": "#fcf3cf",
-    "M": "#ebdef0",
-    "O": "#fae5d3",
-    "C": "#d1f2f5",
-    "B": "#d4e6f1",
-    "Z": "#d6dbdf",
-    "R": "#fadbd8",
-}

@@ -355,6 +355,24 @@ def test_no_outside_requests(server, browser):
     assert not outside
 
 
+def test_dark_mode(page):
+    theme = "document.documentElement.getAttribute('data-bs-theme')"
+    page.click("#theme-button")
+    page.wait_for_function(
+        f"{theme} === 'dark' && {PLOT}._fullLayout.template.layout.plot_bgcolor === 'rgb(17,17,17)'", timeout=10000
+    )
+    # the data tab's grid too
+    open_tab(page, "Data")
+    page.wait_for_selector(".ag-row", timeout=20000)
+    background = page.evaluate("getComputedStyle(document.querySelector('.ag-root-wrapper')).backgroundColor")
+    assert background not in ("rgb(255, 255, 255)", "rgba(0, 0, 0, 0)")
+    # kept by the browser
+    page.reload()
+    page.wait_for_function(f"{theme} === 'dark'", timeout=10000)
+    page.click("#theme-button")
+    page.wait_for_function(f"{theme} === 'light'", timeout=10000)
+
+
 def test_stale_page_reloads(page):
     page.wait_for_load_state("networkidle")
     page.evaluate("window.marker = 1")

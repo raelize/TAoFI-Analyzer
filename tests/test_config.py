@@ -1,5 +1,8 @@
-from analyzer.config import COLORS, ROW_COLORS, AnalyzerConfig
+import os
+
+from analyzer.config import COLORS, AnalyzerConfig
 from analyzer.graphs.common import COLOR_ORDER
+from tests.conftest import REPO
 
 
 def test_from_store_ignores_unknown_keys():
@@ -21,4 +24,9 @@ def test_default_colors_are_not_shared():
 
 
 def test_every_color_code_has_a_row_color():
-    assert set(ROW_COLORS) == set(COLOR_ORDER)
+    """In the data tab, light and dark (assets/raelize.css)."""
+    with open(os.path.join(REPO, "assets", "raelize.css")) as f:
+        css = f.read()
+    for code in COLOR_ORDER:
+        assert f".ag-theme-quartz .ag-row.row-{code} " in css
+        assert f"[data-bs-theme=dark] .ag-row.row-{code} " in css

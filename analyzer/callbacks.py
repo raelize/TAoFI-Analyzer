@@ -13,7 +13,7 @@ from dash import callback_context as ctx
 from dash.exceptions import PreventUpdate
 from dash_ag_grid import AgGrid
 
-from analyzer.config import COLORS, ROW_COLORS, AnalyzerConfig, server_config
+from analyzer.config import COLORS, AnalyzerConfig, server_config
 from analyzer.database import (
     counting,
     data_directory,
@@ -29,7 +29,7 @@ from analyzer.database import (
 )
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, PLOT_AXES, graph_axes
-from analyzer.graphs.common import clicked_experiment, message_figure, plotted_at, shown_points
+from analyzer.graphs.common import COLOR_ORDER, clicked_experiment, message_figure, plotted_at, shown_points, themed
 from analyzer.layout import EXPERIMENT_HIDDEN, EXPERIMENT_SHOWN, axis_style, mega_style, recolor_dot
 from analyzer.selection import SELECTABLE, describe, selection_key
 from analyzer.table import get_table
@@ -53,10 +53,37 @@ def register_callbacks(app):
     # the config-store for the graph tab's callbacks: a callback with inputs on
     # the graph tab and outside of it (the config-store) fails when the store
     # changes while another tab is shown (e.g. switching tabs during an update)
+    # (and the page's theme: the graph is drawn in it)
     app.clientside_callback(
-        "function (store) { return store; }",
+        "function (store, theme) { return { ...store, theme: theme || 'light' }; }",
         Output("graph-store", "data"),
         Input("config-store", "data"),
+        Input("theme-store", "data"),
+    )
+
+    # the theme button in the header: light or dark (kept by the browser)
+    app.clientside_callback(
+        """
+        function (n_clicks, theme) {
+            return n_clicks ? (theme === "dark" ? "light" : "dark") : dash_clientside.no_update;
+        }
+        """,
+        Output("theme-store", "data"),
+        Input("theme-button", "n_clicks"),
+        State("theme-store", "data"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        """
+        function (theme) {
+            const dark = theme === "dark";
+            // bootstrap's dark mode (see also assets/raelize.css)
+            document.documentElement.setAttribute("data-bs-theme", dark ? "dark" : "light");
+            return dark ? "☀ light" : "☾ dark";
+        }
+        """,
+        Output("theme-button", "children"),
+        Input("theme-store", "data"),
     )
 
     # callback for remembering the zoomed area of the graph (shown on the information tab);
@@ -410,7 +437,10 @@ def register_callbacks(app):
     )
     @timed("graph")
     def update_graph(store, hover):
-        config = AnalyzerConfig.from_store(store)
+        return themed(draw_graph(AnalyzerConfig.from_store(store), hover), (store or {}).get("theme"))
+
+    def draw_graph(config, hover):
+        """The graph of ``config`` (or a message why it can't be drawn)."""
         x, y = config.x, config.y
 
         # the recolor fields as stored by update_store(), so that the data tab
@@ -855,13 +885,9 @@ def column_defs(table, wraptext, hidden):
 
 def data_grid(grid_id, columns, wraptext):
     """The data tab's grid; its rows are requested page by page (see get_rows())."""
-    row_styles = {
-        "styleConditions": [
-            {"condition": f"params.data.color == '{code}'", "style": {"backgroundColor": background}}
-            for code, background in ROW_COLORS.items()
-        ],
-        "defaultStyle": {"backgroundColor": "white", "color": "black"},
-    }
+    # a background per color code: the classes row-G etc. (assets/raelize.css; light and dark)
+    # (params.data: not for the rows that are still being loaded)
+    row_classes = {f"row-{code}": f"params.data && params.data.color == '{code}'" for code in COLOR_ORDER}
 
     return AgGrid(
         id=grid_id,
@@ -869,7 +895,7 @@ def data_grid(grid_id, columns, wraptext):
         rowModelType="infinite",
         defaultColDef={"resizable": True, "sortable": True, "filter": True, "checkboxSelection": False},
         className="ag-theme-quartz",
-        getRowStyle=row_styles,
+        rowClassRules=row_classes,
         dashGridOptions={
             "pagination": True,
             "paginationPageSize": _PAGE_SIZE,

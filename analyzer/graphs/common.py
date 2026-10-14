@@ -56,6 +56,20 @@ COLOR_MAP = {
 }
 
 
+# Black is drawn light on a dark background (dark mode; see themed()).
+DARK_BLACK = "#e0e0e0"
+
+
+def themed(fig, theme):
+    """``fig`` in the page's theme (light or dark, the button in the header)."""
+    if theme == "dark":
+        fig.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)")
+        for trace in fig.data:
+            if getattr(trace, "marker", None) is not None and trace.marker.color == COLOR_MAP["Z"]:
+                trace.marker.color = DARK_BLACK
+    return fig
+
+
 # Regex flags of the recolor regexes: . also matches a newline.
 RECOLOR_FLAGS = re.DOTALL
 

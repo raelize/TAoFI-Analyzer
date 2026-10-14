@@ -37,6 +37,8 @@ def create_layout(app):
     app.layout = html.Div(
         [
             dcc.Store(id="config-store", data=asdict(server_config)),
+            # the page's theme: light or dark (the button in the header)
+            dcc.Store(id="theme-store", storage_type="local"),
             # the text fields of the graph tab as last applied, kept by the browser (see update_store())
             dcc.Store(id="applied-fields", storage_type="local"),
             dcc.Store(id="data-hidden-columns", data=["hex(response)"], storage_type="local"),
@@ -61,8 +63,17 @@ def create_layout(app):
                                 title="time from sending the request until the browser rendered the result",
                             ),
                             html.Span("", id="timing", title="time spent in the server callback"),
+                            # light or dark (see the theme callbacks)
+                            html.Button(
+                                "☾ dark",
+                                id="theme-button",
+                                n_clicks=0,
+                                className="ms-3",
+                                title="dark or light mode",
+                                style={"fontFamily": "inherit"},
+                            ),
                         ],
-                        style={"fontFamily": "monospace", "color": "#666"},
+                        style={"fontFamily": "monospace", "color": "var(--bs-secondary-color)"},
                     ),
                 ],
                 style={**PAGE_STYLE, "display": "flex", "justifyContent": "space-between", "alignItems": "baseline"},
@@ -358,7 +369,7 @@ def recolor_fields(config):
                     value=label,
                     placeholder="label",
                     size="sm",
-                    style={"fontSize": "0.8rem", "color": "#666"},
+                    style={"fontSize": "0.8rem", "color": "var(--bs-secondary-color)"},
                 ),
             ],
             className="d-flex flex-column gap-1",
@@ -373,7 +384,9 @@ def recolor_fields(config):
 
 def recolor_dot(color, recolored):
     """The dot of a recolor color: filled when the color is recolored, else only its outline."""
-    swatch = COLOR_MAP[COLOR_CODES[COLORS.index(color)]]
+    code = COLOR_CODES[COLORS.index(color)]
+    # (black: the text color, so it shows in dark mode too)
+    swatch = "var(--bs-emphasis-color)" if code == "Z" else COLOR_MAP[code]
     return {
         "display": "inline-block",
         "width": "14px",
@@ -464,7 +477,7 @@ def data_tab(config, refresh):
             loading(
                 html.Div(
                     id="data",
-                    className="border-0 p-2 bg-light rounded",
+                    className="border-0 p-2 bg-body-tertiary rounded",
                     style={
                         "minHeight": "400px",
                         "height": "100%",
