@@ -27,3 +27,29 @@ def test_jitter_stays_the_same(tmp_path, make_database, request_from):
         # new experiments: the others keep their jitter
         append(config, [(5, 100, 10, "G", b"x")])
         assert list(axis_values(get_dataset(config), "delay", 2)[:5]) == list(delay)
+
+
+def test_sample():
+    from analyzer.graphs.common import sample
+
+    assert sample(10, 10) is None and sample(10, None) is None
+    shown = sample(100_000, 10_000)
+    assert 9_000 < shown.sum() < 11_000
+    # the same experiments every time; new ones at the end don't change it much
+    assert (sample(100_000, 10_000) == shown).all()
+    assert (sample(100_100, 10_000)[:100_000] <= shown).all()
+
+
+def test_3d_graph_draws_a_sample(tmp_path, make_database, request_from, monkeypatch):
+    from analyzer.graphs import scatter3d
+
+    monkeypatch.setattr(scatter3d, "MAX_POINTS", 50)
+    make_database(rows=[(i, i, i, "GR"[i % 2], b"x") for i in range(500)])
+    config = AnalyzerConfig(directory=str(tmp_path), database="test.sqlite", x="delay", y="length", z="id", graph="3d")
+    with request_from("127.0.0.1"):
+        figure = scatter3d.scatter3d_func("delay", "length", True, get_dataset(config), config, [], *[None] * 16)
+    drawn = sum(len(trace.x) for trace in figure.data)
+    assert 25 < drawn < 100
+    assert figure.layout.legend.title.text == f"Classification ( 500; {drawn} shown ):"
+    # the counts in the legend: all experiments
+    assert [trace.name for trace in figure.data] == ["green ( 250 / 50.0% )", "red ( 250 / 50.0% )"]

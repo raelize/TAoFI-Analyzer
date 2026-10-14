@@ -466,6 +466,19 @@ def test_clicked_experiment(client, tmp_path, make_database):
         assert text(response["experiment"]["children"]) == "The database changed: click the point again."
 
 
+def test_clicked_experiment_of_a_sample(client, tmp_path, make_database, monkeypatch):
+    from analyzer import graphs
+    from analyzer.graphs.common import sample
+
+    monkeypatch.setitem(graphs.GRAPH_MAX_POINTS, "3d", 50)
+    make_database(rows=[(i, i, 2 * i, "G", b"x") for i in range(500)])
+    store = dict(client.layout_store(), directory=str(tmp_path), database="test.sqlite", x="delay", y="length", z="id", graph="3d")
+    # the 4th point drawn
+    row = int(sample(500, 50).nonzero()[0][3])
+    code, response = click(client, store, 0, 3, x=row, y=2 * row, z=row)
+    assert f"id {row}" in text(response["experiment"]["children"])
+
+
 def test_graph_without_hover(client, store):
     code, response = graph(client, store, hover=False)
     assert response["graph"]["figure"]["layout"]["hovermode"] is False

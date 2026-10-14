@@ -2,6 +2,7 @@
 from analyzer.graphs.mega import mega_func
 from analyzer.graphs.scatter import scatter_func
 from analyzer.graphs.scatter2 import scatter2_func
+from analyzer.graphs.scatter3d import MAX_POINTS as MAX_POINTS_3D
 from analyzer.graphs.scatter3d import scatter3d_func
 
 GRAPHS = {
@@ -23,6 +24,11 @@ GRAPH_AXES = {
     "mega": (),
 }
 
+
+# the number of points a graph type draws at most (about; see sample())
+GRAPH_MAX_POINTS = {
+    "3d": MAX_POINTS_3D,
+}
 
 # the plots of a graph type (each with the traces of color_traces()): the axis
 # of each coordinate of a clicked point (see show_experiment()); a graph type

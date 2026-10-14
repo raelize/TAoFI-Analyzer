@@ -82,18 +82,35 @@ def color_masks(colors):
     return {str(code): codes == index for index, code in enumerate(uniques)}
 
 
-def color_traces(colors):
-    """(color code, mask) of the traces of a graph, in their order (COLOR_ORDER, the codes present)."""
+def sample(count, limit):
+    """Which of ``count`` experiments a graph that can show about ``limit`` draws (a mask; None: all).
+
+    A fixed pseudo-random choice per experiment, the same every time the graph
+    is drawn (new experiments are added at the end); not every n-th experiment,
+    which would skip a regular pattern of glitch parameters.
+    """
+    if limit is None or count <= limit:
+        return None
+    return np.random.default_rng(0).random(count) < limit / count
+
+
+def color_traces(colors, shown=None):
+    """(color code, mask) of the traces of a graph, in their order (COLOR_ORDER, the codes present);
+    only the experiments ``shown`` (see sample())."""
     masks = color_masks(colors)
-    return [(code, masks[code]) for code in COLOR_ORDER if code in masks]
+    traces = [(code, masks[code]) for code in COLOR_ORDER if code in masks]
+    if shown is not None:
+        traces = [(code, mask & shown) for code, mask in traces]
+    return traces
 
 
-def clicked_experiment(colors, curve, point, plots=1):
+def clicked_experiment(colors, curve, point, plots=1, shown=None):
     """(experiment (row), plot) of point ``point`` of trace ``curve``, or None (not in this graph).
 
-    A graph with several ``plots`` (scatter2) has these traces for each plot.
+    A graph with several ``plots`` (scatter2) has these traces for each plot;
+    ``shown``: the experiments the graph draws (see sample()).
     """
-    traces = color_traces(colors)
+    traces = color_traces(colors, shown)
     if not 0 <= curve < len(traces) * plots:
         return None
     plot, curve = divmod(curve, len(traces))
