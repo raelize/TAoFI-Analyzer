@@ -24,6 +24,13 @@ Some examples include:
 
 The input fields are mandatory (i.e., otherwise nothing is shown).
 
+The graph types:
+
+- `scatter`: the experiments with the x and y parameters against each other, colored by their classification
+- `scatter2`: the same, in a fixed size (the recolor qualifiers don't match newlines with `.`)
+- `simple`: the experiments as classified by the glitch script (no recoloring)
+- `3d`: the x, y and z parameters against each other; drag to rotate, scroll to zoom
+
 At the bottom of the graph you can recolor the experiments fed into the graph engine.
 
 The first field is the qualifier (i.e., `re.search(<qualifier>, response))`) and the second field is the label.

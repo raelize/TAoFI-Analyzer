@@ -13,6 +13,7 @@ class AnalyzerConfig:
     database: str | None = None
     x: str | None = None
     y: str | None = None
+    z: str | None = None  # for the 3d graph
     jitter: float = 0
     argv: str = ""
     query: str = ""

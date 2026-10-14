@@ -16,7 +16,7 @@ from analyzer.database import (data_directory, database_path, file_key, get_argv
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
 from analyzer.timing import register_timing, timed
-from analyzer.graphs import GRAPHS
+from analyzer.graphs import GRAPH_AXES, GRAPHS
 from analyzer.graphs.common import message_figure
 
 _PAGE_SIZE = 100
@@ -34,7 +34,7 @@ def register_callbacks(app):
         function (relayout, store) {
             const triggered = dash_clientside.callback_context.triggered.map((t) => t.prop_id);
             const plot = document.querySelector("#graph .js-plotly-plot");
-            if (triggered.includes("config-store.data") || !plot || !plot.layout) {
+            if (triggered.includes("config-store.data") || !plot || !plot.layout || !plot.layout.xaxis || plot.layout.scene) {
                 // another graph: nothing zoomed (yet)
                 return null;
             }
@@ -178,11 +178,13 @@ def register_callbacks(app):
         Output("database-dropdown", "value"),
         Output("x-dropdown", "value"),
         Output("y-dropdown", "value"),
+        Output("z-dropdown", "value"),
         [
             Input("update-button", "n_clicks"),
             Input("database-dropdown", "value"),
             Input("x-dropdown", "value"),
             Input("y-dropdown", "value"),
+            Input("z-dropdown", "value"),
             Input("refresh-timer", "n_intervals"),
             Input("switch-fixgreen", "value"),
             Input("graph-dropdown", "value"),
@@ -195,7 +197,7 @@ def register_callbacks(app):
         + [State(f"recolor-{color}-label", "value") for color in COLORS],
     )
     # def update_store(nr_of_clicks, contents, query, database, x, y, store, *color_states):
-    def update_store(nr_of_clicks, database, x, y, n_intervals, fixgreen, graph, directory, query, store, jitter, *color_states):
+    def update_store(nr_of_clicks, database, x, y, z, n_intervals, fixgreen, graph, directory, query, store, jitter, *color_states):
         config = AnalyzerConfig.from_store(store)
 
         directory = data_directory(directory)
@@ -208,7 +210,7 @@ def register_callbacks(app):
             config.database = None
             config.dbkey = ""
             config.argv = ""
-            return asdict(config), None, config.x, config.y
+            return asdict(config), None, config.x, config.y, config.z
 
         if database is None:
             raise PreventUpdate
@@ -229,6 +231,7 @@ def register_callbacks(app):
         config.database = database
         config.x = x
         config.y = y
+        config.z = z
         config.jitter = jitter
         config.query = query
         config.fixgreen = fixgreen
@@ -239,7 +242,7 @@ def register_callbacks(app):
         for color, regex, label in zip(COLORS, color_states[:8], color_states[8:]):
             config.colors[color] = [regex, label]
 
-        return asdict(config), config.database, config.x, config.y
+        return asdict(config), config.database, config.x, config.y, config.z
 
     # callback for printing the argv string at the bottom; also runs when the
     # information tab is opened (its input already exists, only the output is new)
@@ -251,10 +254,11 @@ def register_callbacks(app):
         config = AnalyzerConfig.from_store(store)
         return config.argv
 
-    # callback for the x and y lists
+    # callback for the x, y and z lists
     @app.callback(
         Output("x-dropdown", "options"),
         Output("y-dropdown", "options"),
+        Output("z-dropdown", "options"),
         Input("database-dropdown", "value"),
         State("config-store", "data"),
         prevent_initial_call=True,
@@ -264,7 +268,7 @@ def register_callbacks(app):
         if path is None:
             raise PreventUpdate
         parameters = get_parameters(path)
-        return parameters, parameters
+        return parameters, parameters, parameters
 
 
 
@@ -285,9 +289,9 @@ def register_callbacks(app):
         regexes = [config.colors.get(color, [None, None])[0] for color in COLORS]
         labels = [config.colors.get(color, [None, None])[1] for color in COLORS]
 
-        # prevent update
-        if any(v is None for v in [x, y]):
-            raise PreventUpdate
+        missing = [axis for axis in GRAPH_AXES.get(config.graph, ("x", "y")) if getattr(config, axis) is None]
+        if missing:
+            return message_figure(f"Select the {' and '.join(missing)} axis to show the {config.graph} graph")
 
         try:
             dataset = get_dataset(config)

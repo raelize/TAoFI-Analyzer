@@ -25,10 +25,11 @@ def remote(dash_client):
 
 
 def select(client, store, database=EXAMPLE_DATABASE, directory=None, trigger="update-button.n_clicks", query="",
-           graph="scatter", fixgreen=True, x="delay", y="length", recolor=None):
+           graph="scatter", fixgreen=True, x="delay", y="length", z=None, recolor=None):
     """update_store(): what happens when the user selects a database and clicks Update."""
     values = {
         "update-button.n_clicks": 1, "database-dropdown.value": database, "x-dropdown.value": x, "y-dropdown.value": y,
+        "z-dropdown.value": z,
         "refresh-timer.n_intervals": None, "switch-fixgreen.value": fixgreen, "graph-dropdown.value": graph,
         "directory-input.value": directory or store["directory"], "query-input.value": query,
         "config-store.data": store, "jitter-input.value": 0,
@@ -86,7 +87,7 @@ def test_tabs_render(client, store, tab):
 
 
 def test_graph_tab_shows_the_store(client, store):
-    store = dict(store, x="id", y="delay", jitter=3, graph="scatter2", fixgreen=False)
+    store = dict(store, x="id", y="delay", z="length", jitter=3, graph="scatter2", fixgreen=False)
     code, response = client.call("tabs-content.children", {"tabs.value": "tab-graph", "config-store.data": store}, "tabs.value")
     values = {}
 
@@ -103,7 +104,7 @@ def test_graph_tab_shows_the_store(client, store):
 
     walk(response)
     assert values["database-dropdown"] == EXAMPLE_DATABASE
-    assert (values["x-dropdown"], values["y-dropdown"], values["jitter-input"]) == ("id", "delay", 3)
+    assert (values["x-dropdown"], values["y-dropdown"], values["z-dropdown"], values["jitter-input"]) == ("id", "delay", "length", 3)
     assert (values["graph-dropdown"], values["switch-fixgreen"]) == ("scatter2", False)
 
 
@@ -135,6 +136,7 @@ def test_database_list(client, tmp_path):
 def test_axis_lists(client, store):
     code, response = client.call("x-dropdown.options", {"database-dropdown.value": EXAMPLE_DATABASE, "config-store.data": store}, "database-dropdown.value")
     assert response["x-dropdown"]["options"] == response["y-dropdown"]["options"] == ["id", "delay", "length", "color"]
+    assert response["z-dropdown"]["options"] == ["id", "delay", "length", "color"]
 
 
 def test_switch_directory(client, store, tmp_path, make_database):
@@ -198,6 +200,29 @@ def test_graph_types(client, graph_type):
     code, response = graph(client, response["config-store"]["data"])
     assert code == 200
     assert len(response["graph"]["figure"]["data"]) == 4
+
+
+def test_3d_graph(client):
+    _, response = select(client, client.layout_store(), graph="3d", z="id", recolor={"red": "^"})
+    store = response["config-store"]["data"]
+    assert (store["z"], response["z-dropdown"]["value"]) == ("id", "id")
+    code, response = graph(client, store)
+    assert code == 200
+    figure = response["graph"]["figure"]
+    assert {trace["type"] for trace in figure["data"]} == {"scatter3d"}
+    assert legend(response)[-1] == "^ ( 3839 / 56.1% )"
+    assert figure["layout"]["scene"]["zaxis"]["title"]["text"] == "id"
+
+
+@pytest.mark.parametrize("graph_type, axes, message", [
+    ("scatter", {"x": None}, "Select the x axis to show the scatter graph"),
+    ("3d", {}, "Select the z axis to show the 3d graph"),
+    ("3d", {"z": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
+])
+def test_graph_without_its_axes(client, store, graph_type, axes, message):
+    code, response = graph(client, dict(store, graph=graph_type, **axes))
+    assert code == 200
+    assert graph_message(response) == message
 
 
 def test_recolored_graph(client):

@@ -50,7 +50,7 @@ app.scripts.config.serve_locally = True
 server = app.server
 
 
-def setup(directory, database=None, x=None, y=None):
+def setup(directory, database=None, x=None, y=None, z=None):
     """Configure the analyzer (directory and presets) and create its page."""
     directory = os.path.abspath(directory)
     if not os.path.isdir(directory):
@@ -60,6 +60,7 @@ def setup(directory, database=None, x=None, y=None):
     server_config.database = database
     server_config.x = x
     server_config.y = y
+    server_config.z = z
 
     register_callbacks(app)
     create_layout(app)
@@ -86,6 +87,7 @@ if __name__ == "__main__":
     parser.add_argument("directory", help="Directory with the databases", type=str)
     parser.add_argument("--x", required=False, help="Preset the x parameter")
     parser.add_argument("--y", required=False, help="Preset the y parameter")
+    parser.add_argument("--z", required=False, help="Preset the z parameter (3d graph)")
     parser.add_argument("--database", required=False, help="Preset the database")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument(
@@ -94,7 +96,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    setup(args.directory, args.database, args.x, args.y)
+    setup(args.directory, args.database, args.x, args.y, args.z)
 
     # the built-in server is meant for a single (local) user; gunicorn is
     # documented for anything else, so leave out werkzeug's reminder of that
@@ -110,6 +112,7 @@ else:
         os.environ.get("ANALYZER_DATABASE"),
         os.environ.get("ANALYZER_X"),
         os.environ.get("ANALYZER_Y"),
+        os.environ.get("ANALYZER_Z"),
     )
 
     # serve the index page once now: this registers the component script

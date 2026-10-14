@@ -166,6 +166,7 @@ def graph_tab(config):
                     [
                         dcc.Dropdown(id="x-dropdown", style={"width": "100%"}, placeholder="x-axis", value=config.x),
                         dcc.Dropdown(id="y-dropdown", style={"width": "100%"}, placeholder="y-axis", value=config.y),
+                        dcc.Dropdown(id="z-dropdown", style={"width": "100%"}, placeholder="z-axis (3d)", value=config.z),
                         dcc.Input(id="jitter-input", type="number", value=config.jitter or 0, style={"width": "100%"}),
                     ],
                     style={"display": "flex"},
