@@ -215,8 +215,32 @@ def test_graph_without_hover(client, store):
 
 def test_graph_of_a_non_analyzer_database(client, store, tmp_path, make_database):
     make_database("no-response.sqlite", columns="id integer, delay integer, length integer, color text", rows=[(1, 1, 1, "G")])
-    code, _ = graph(client, dict(store, directory=str(tmp_path), database="no-response.sqlite"))
-    assert code == 204
+    code, response = graph(client, dict(store, directory=str(tmp_path), database="no-response.sqlite"))
+    assert code == 200
+    assert graph_message(response) == "no-response.sqlite has no response column"
+
+
+def graph_message(response):
+    return response["graph"]["figure"]["layout"]["annotations"][0]["text"]
+
+
+def test_a_bad_query_is_shown(client, store):
+    store = dict(store, query="no_such_column > 1")
+    code, response = graph(client, store)
+    assert code == 200
+    assert graph_message(response) == f"{EXAMPLE_DATABASE}: no such column: no_such_column"
+    code, response = data(client, store)
+    assert code == 200
+    assert response["data"]["children"]["props"]["children"] == f"{EXAMPLE_DATABASE}: no such column: no_such_column"
+    assert response["data-columns"]["options"] == []
+
+
+def test_not_enough_memory_is_shown(client, store, monkeypatch):
+    monkeypatch.setattr(database, "available_memory", lambda: 100 * 2**20)
+    code, response = graph(client, store)
+    assert code == 200
+    assert graph_message(response) == (f"{EXAMPLE_DATABASE}: not enough memory: stopped after 6843 experiments "
+                                       "(100 MB left); use a query to load fewer experiments")
 
 
 #

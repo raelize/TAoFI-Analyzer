@@ -4,6 +4,7 @@ from dataclasses import asdict
 
 import dash_bootstrap_components as dbc
 import pandas as pd
+import plotly.graph_objects as go
 from dash import ALL, MATCH, Input, Output, State, html
 from dash import callback_context as ctx
 from dash import no_update
@@ -13,7 +14,7 @@ from dash_ag_grid import AgGrid
 from analyzer.config import COLORS, ROW_COLORS, AnalyzerConfig, server_config
 from analyzer.database import (data_directory, database_path, file_key, get_argv, get_databases,
                                get_parameters, is_local_request, list_directory, query_connection, query_error)
-from analyzer.dataset import get_dataset
+from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
 from analyzer.timing import timed
 from analyzer.graphs import GRAPHS
@@ -286,7 +287,10 @@ def register_callbacks(app):
         if any(v is None for v in [x, y]):
             raise PreventUpdate
 
-        dataset = get_dataset(config)
+        try:
+            dataset = get_dataset(config)
+        except DatasetError as e:
+            return message_figure(str(e))
 
         # create graph
         if config.graph in GRAPHS:
@@ -321,7 +325,11 @@ def register_callbacks(app):
 
         # squeeze data (or not); only the column layout is needed here, the
         # rows are fetched page by page by get_rows()
-        table = get_table(get_dataset(config), config, squeeze, response_s, response_e)
+        try:
+            dataset = get_dataset(config)
+        except DatasetError as e:
+            return html.Div(str(e), className="text-danger m-3"), [], []
+        table = get_table(dataset, config, squeeze, response_s, response_e)
         hidden = set(hidden or [])
 
         # a new id per grid configuration makes the grid remount and re-request its rows
@@ -419,6 +427,16 @@ def register_callbacks(app):
             con.close()
 
         return df.to_string(index=False)
+
+
+def message_figure(message):
+    """An empty graph showing ``message`` (e.g. why the database can't be shown)."""
+    fig = go.Figure()
+    fig.add_annotation(text=message, showarrow=False, font={"size": 16, "color": "#c0392b"},
+                       xref="paper", yref="paper", x=0.5, y=0.5)
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+    return fig
 
 
 def column_defs(table, wraptext, hidden):

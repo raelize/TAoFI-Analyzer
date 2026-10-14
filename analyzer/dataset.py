@@ -11,6 +11,10 @@ from analyzer.config import COLORS
 from analyzer.database import REQUIRED_COLUMNS, database_path, file_key, load_dataframe, query_error
 from analyzer.graphs.common import COLOR_CODES, RECOLOR_FLAGS
 
+class DatasetError(PreventUpdate):
+    """A database that can't be shown (bad query, not enough memory, ...); the message is for the user."""
+
+
 # Loaded databases are cached per worker process.
 _DATASET_CACHE = OrderedDict()
 _DATASET_CACHE_SIZE = 3
@@ -122,13 +126,15 @@ def get_dataset(config):
     try:
         df = load_dataframe(path, config.query or "")
     except Exception as e:
-        print("ERROR (get_dataset): %s" % query_error(e))
-        raise PreventUpdate
+        message = f"{config.database}: {query_error(e)}"
+        print("ERROR (get_dataset): %s" % message)
+        raise DatasetError(message)
 
     missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
     if missing:
-        print("ERROR (get_dataset): %s has no %s column" % (config.database, ", ".join(missing)))
-        raise PreventUpdate
+        message = f"{config.database} has no {', '.join(missing)} column"
+        print("ERROR (get_dataset): %s" % message)
+        raise DatasetError(message)
 
     dataset = Dataset(key, df)
     with _CACHE_LOCK:

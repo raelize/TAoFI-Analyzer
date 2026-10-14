@@ -15,6 +15,7 @@ from analyzer.config import server_config
 _COUNT_CACHE = {}  # path -> (file_key, number of experiments)
 QUERY_TIMEOUT = 60  # seconds, for queries entered by the user
 LOAD_CHUNK = 10_000  # rows fetched at a time
+MEMORY_RESERVE = 256 * 2**20  # bytes a database load leaves free (for the rest of the analyzer and the system)
 
 
 def file_key(path):
@@ -200,6 +201,18 @@ def query_connection(path):
     return con
 
 
+def available_memory():
+    """Memory available to new allocations in bytes, or None if unknown (not Linux)."""
+    try:
+        with open("/proc/meminfo") as meminfo:
+            for line in meminfo:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def query_error(e):
     """Message for a failed user query."""
     # pandas wraps the sqlite error in its own exception
@@ -233,6 +246,11 @@ def load_dataframe(database_path, query):
                 if index == response:
                     chunk = [responses.setdefault(r, r) for r in chunk]
                 values[index].extend(chunk)
+            # stop before the system runs out of memory (and kills the analyzer)
+            available = available_memory()
+            if available is not None and available < MEMORY_RESERVE:
+                raise MemoryError(f"not enough memory: stopped after {len(values[0])} experiments "
+                                  f"({available // 2**20} MB left); use a query to load fewer experiments")
     finally:
         con.close()
 

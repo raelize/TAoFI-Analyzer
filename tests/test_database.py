@@ -6,7 +6,7 @@ import pytest
 
 from analyzer import database
 from analyzer.config import server_config
-from analyzer.database import (connect, data_directory, database_path, file_key, get_argv, get_databases,
+from analyzer.database import (available_memory, connect, data_directory, database_path, file_key, get_argv, get_databases,
                                get_number_of_experiments, get_parameters, list_directory, load_dataframe,
                                match_hex, match_string, query_connection, query_error)
 from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, EXAMPLE_EXPERIMENTS, create_database
@@ -199,6 +199,21 @@ def test_load_dataframe_keeps_one_copy_per_response(tmp_path, make_database, mon
     assert len({id(r) for r in df["response"]}) == 2
     assert list(df["response"][:2]) == [b"other", b"same"]
     assert len(load_dataframe(str(tmp_path / "test.sqlite"), "id > 100")) == 0
+
+
+def test_load_dataframe_stops_before_running_out_of_memory(tmp_path, make_database, monkeypatch):
+    monkeypatch.setattr(database, "LOAD_CHUNK", 2)
+    make_database(rows=[(i, i, 3, "G", b"x") for i in range(7)])
+    path = str(tmp_path / "test.sqlite")
+    monkeypatch.setattr(database, "available_memory", lambda: None)  # unknown: no check
+    assert len(load_dataframe(path, "")) == 7
+    monkeypatch.setattr(database, "available_memory", lambda: database.MEMORY_RESERVE - 1)
+    with pytest.raises(MemoryError, match="stopped after 2 experiments"):
+        load_dataframe(path, "")
+
+
+def test_available_memory():
+    assert available_memory() is None or available_memory() > 0
 
 
 def test_match_helpers():

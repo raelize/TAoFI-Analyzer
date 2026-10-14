@@ -7,10 +7,14 @@ The databases are generated once and kept in .pytest_cache/d/profile-databases
 (1 000 000 experiments with 4096 byte responses is about 4 GB). Settings:
   ANALYZER_PROFILE_SIZES     numbers of experiments (default 1000,10000,100000,1000000)
   ANALYZER_PROFILE_RESPONSE  bytes per response (default 4096)
-A size that doesn't fit in the available memory is skipped.
+A size the analyzer refuses to load (not enough memory) is skipped, as is
+generating one without enough disk space.
+"memory" is the largest the test process got so far (the sizes go up).
 """
 import os
 import random
+import resource
+import shutil
 import sqlite3
 import time
 
@@ -19,7 +23,7 @@ import pytest
 
 from analyzer.config import COLORS, AnalyzerConfig
 from analyzer.database import get_number_of_experiments
-from analyzer.dataset import get_dataset
+from analyzer.dataset import DatasetError, get_dataset
 from analyzer.graphs import GRAPHS
 from analyzer.table import get_table
 
@@ -31,21 +35,8 @@ RESPONSE_SIZE = int(os.environ.get("ANALYZER_PROFILE_RESPONSE", "4096"))
 # like a real campaign: most responses are one of a few, every 10th is unique (e.g. a crash dump)
 COMMON_RESPONSES = 8
 UNIQUE_EVERY = 10
-# memory needed while loading, relative to the size of the responses
-MEMORY_FACTOR = 1.5
 
 RESULTS = []
-
-
-def available_memory():
-    try:
-        with open("/proc/meminfo") as meminfo:
-            for line in meminfo:
-                if line.startswith("MemAvailable:"):
-                    return int(line.split()[1]) * 1024
-    except OSError:
-        pass
-    return None
 
 
 def generate(path, experiments):
@@ -96,11 +87,6 @@ def summary(request):
 
 @pytest.mark.parametrize("experiments", SIZES, ids=str)
 def test_open_database(experiments, directory, request_from, capsys):
-    needed = experiments * RESPONSE_SIZE * MEMORY_FACTOR
-    available = available_memory()
-    if available is not None and needed > available:
-        pytest.skip(f"needs about {needed / 2**30:.1f} GB of memory, {available / 2**30:.1f} GB available")
-
     database = f"profile-{experiments}-{RESPONSE_SIZE}.sqlite"
     path = os.path.join(directory, database)
     timings = {}
@@ -112,6 +98,9 @@ def test_open_database(experiments, directory, request_from, capsys):
         return result
 
     if not os.path.exists(path):
+        needed = experiments * (RESPONSE_SIZE + 100)
+        if shutil.disk_usage(directory).free < needed * 1.1:
+            pytest.skip(f"generating it needs about {needed / 2**30:.1f} GB of disk space")
         step("generate", lambda: generate(path, experiments))
     else:
         timings["generate"] = "(cached)"
@@ -124,7 +113,10 @@ def test_open_database(experiments, directory, request_from, capsys):
         # the database list
         assert step("count", lambda: get_number_of_experiments(directory, database)) == experiments
         # the graph tab: load, draw and send
-        dataset = step("load", lambda: get_dataset(config))
+        try:
+            dataset = step("load", lambda: get_dataset(config))
+        except DatasetError as e:
+            pytest.skip(str(e))
         assert len(dataset.df) == experiments
         figure = step("graph", lambda: GRAPHS[config.graph](config.x, config.y, config.fixgreen, dataset, config,
                                                              COLORS, *regexes, *[None] * len(COLORS)))
@@ -139,6 +131,7 @@ def test_open_database(experiments, directory, request_from, capsys):
         step("data filter", lambda: table.page(0, 100, [], {"response": {"filterType": "text", "type": "contains", "filter": "x"}}))
         # again (e.g. another browser tab): from the cache
         step("load cached", lambda: get_dataset(config))
+    timings["memory (MB)"] = str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024)
 
     RESULTS.append((experiments, timings))
     with capsys.disabled():
