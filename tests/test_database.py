@@ -191,6 +191,16 @@ def test_load_dataframe(tmp_path, make_database):
     assert list(load_dataframe(path, "match_hex(response, '661b')")["id"]) == [3]
 
 
+def test_load_dataframe_keeps_one_copy_per_response(tmp_path, make_database, monkeypatch):
+    monkeypatch.setattr(database, "LOAD_CHUNK", 2)  # the same response in different chunks
+    make_database(rows=[(i, i, 3, "G", b"same" if i % 2 else b"other") for i in range(7)])
+    df = load_dataframe(str(tmp_path / "test.sqlite"), "")
+    assert list(df["id"]) == list(range(7))
+    assert len({id(r) for r in df["response"]}) == 2
+    assert list(df["response"][:2]) == [b"other", b"same"]
+    assert len(load_dataframe(str(tmp_path / "test.sqlite"), "id > 100")) == 0
+
+
 def test_match_helpers():
     assert match_string(b"Hello", "ell")
     assert not match_string(b"Hello", "x")

@@ -14,6 +14,7 @@ from analyzer.config import server_config
 
 _COUNT_CACHE = {}  # path -> (file_key, number of experiments)
 QUERY_TIMEOUT = 60  # seconds, for queries entered by the user
+LOAD_CHUNK = 10_000  # rows fetched at a time
 
 
 def file_key(path):
@@ -222,11 +223,17 @@ def load_dataframe(database_path, query):
     try:
         cursor = con.execute(sql)
         columns = [d[0] for d in cursor.description]
-        rows = cursor.fetchall()
+        values = [[] for _ in columns]
+        response = columns.index("response") if "response" in columns else None
+        # one copy per distinct response: experiments mostly repeat a few
+        # responses, so memory depends on the distinct ones, not on the rows
+        responses = {None: b""}
+        while rows := cursor.fetchmany(LOAD_CHUNK):
+            for index, chunk in enumerate(zip(*rows)):
+                if index == response:
+                    chunk = [responses.setdefault(r, r) for r in chunk]
+                values[index].extend(chunk)
     finally:
         con.close()
 
-    df = pd.DataFrame(rows, columns=columns)
-    if "response" in df.columns:
-        df["response"] = df["response"].map(lambda r: b"" if r is None else r)
-    return df
+    return pd.DataFrame(dict(zip(columns, values)), columns=columns)
