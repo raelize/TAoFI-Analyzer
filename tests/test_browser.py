@@ -301,6 +301,29 @@ def test_data_tab(page):
     assert values and all(v > 1900 for v in values)
 
 
+def test_data_tab_follows_the_graph(page):
+    """The data tab stays in the page: it shows what the graph shows, not what it showed before."""
+    grid = "document.querySelector('[id*=\"data-grid\"]')"
+    rows = f"dash_ag_grid.getApi({grid}.id).getDisplayedRowCount()"
+    open_tab(page, "Data")
+    page.wait_for_selector(".ag-row", timeout=20000)
+    before, grid_id = page.evaluate(f"[{rows}, {grid}.id]")
+    # unchanged: the same grid (it keeps its rows)
+    open_tab(page, "Graph")
+    open_tab(page, "Data")
+    page.wait_for_timeout(1000)
+    assert page.evaluate(f"{grid}.id") == grid_id
+    # another query on the graph tab: the data tab shows its rows
+    open_tab(page, "Graph")
+    title = legend_title(page)
+    page.fill("#query-input", "delay > 1950")
+    page.press("#query-input", "Enter")
+    page.wait_for_function(f"{PLOT}.layout.legend.title.text !== {title!r}", timeout=10000)
+    open_tab(page, "Data")
+    page.wait_for_function(f"{grid} && {grid}.id !== {grid_id!r} && {rows} > 0", timeout=20000)
+    assert page.evaluate(rows) < before
+
+
 def test_the_graph_stays_drawn_when_switching_tabs(page):
     """All tabs are in the page: the graph isn't drawn again (nor asked for)."""
     page.evaluate(f"window.drawn = {PLOT}.data[0]")

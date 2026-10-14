@@ -657,11 +657,14 @@ def register_callbacks(app):
         table = get_table(dataset, config, squeeze, response_s, response_e, selection)
         hidden = set(hidden or [])
 
-        # a new id per grid configuration makes the grid remount and re-request its rows
+        # a new id per grid configuration makes the grid remount and re-request its rows;
+        # also per config (e.g. the query) and version of the database: the data tab
+        # stays in the page, an unchanged grid keeps its rows (and scrolling, sorting)
         selected = zlib.crc32(selection_key(selection).encode()) if table.selected is not None else ""
+        shown_config = zlib.crc32(json.dumps(asdict(config), sort_keys=True).encode())
         grid_id = {
             "type": "data-grid",
-            "index": f"{int(bool(squeeze))}-{int(bool(wraptext))}-{response_s}-{response_e}-{selected}",
+            "index": f"{int(bool(squeeze))}-{int(bool(wraptext))}-{response_s}-{response_e}-{selected}-{shown_config}",
         }
         grid = data_grid(grid_id, column_defs(table, wraptext, hidden), wraptext)
 
