@@ -67,14 +67,22 @@ The code lives in the `analyzer` package (`taofi-analyzer.py` only starts it):
 - `callbacks.py` and `layout.py`: the Dash app
 - `graphs/`: the graph types
 
-Run the tests and the linter with `uv`:
+Run the tests, the linter, the formatter and the type checker with `uv` (all are configured in `pyproject.toml`):
 
 ```bash
 $ uv run pytest
 $ uv run ruff check
+$ uv run ruff format --check
+$ uv run ty check
 # the browser tests (headless Chrome, or Playwright's Chromium via: uv run playwright install chromium)
 $ uv sync --group browser
 $ uv run pytest -m browser
 # how long opening databases of 1000 to 1000000 experiments takes (generates up to ~4 GB, see tests/test_profile.py)
 $ uv run pytest -m profile -s
+```
+
+`ruff format` formatted the whole code base once; to let `git blame` skip that commit:
+
+```bash
+$ git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
