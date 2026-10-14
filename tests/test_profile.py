@@ -126,13 +126,14 @@ def test_open_database(experiments, directory, request_from, capsys):
         # every graph type: drawn, and as sent to the browser
         for graph in GRAPHS:
             config.graph = graph
+            draw = GRAPHS[graph]
             figure = step(
                 graph,
-                lambda: GRAPHS[graph](
+                lambda draw=draw: draw(
                     config.x, config.y, config.fixgreen, dataset, config, COLORS, *regexes, *[None] * len(COLORS)
                 ),
             )
-            step(f"{graph} json", lambda: plotly.io.to_json(figure))
+            step(f"{graph} json", lambda figure=figure: plotly.io.to_json(figure))
         config.graph = "scatter"
         # the data tab: the table and its first page, squeezed (default) and not
         squeezed = step("data", lambda: get_table(dataset, config, True, None, None))

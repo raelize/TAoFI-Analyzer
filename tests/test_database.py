@@ -28,7 +28,14 @@ from analyzer.database import (
     query_error,
     run_query,
 )
-from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, EXAMPLE_EXPERIMENTS, create_database
+from tests.conftest import (
+    EXAMPLE_ARGV,
+    EXAMPLE_DATABASE,
+    EXAMPLE_DIRECTORY,
+    EXAMPLE_EXPERIMENTS,
+    SLOW_CONDITION,
+    create_database,
+)
 
 COLUMNS = "id integer, delay integer, length integer, color text, response blob"
 
@@ -119,21 +126,16 @@ def test_slow_queries_are_interrupted(tmp_path, make_database, monkeypatch):
     con = query_connection(str(tmp_path / "test.sqlite"))
     started = time.monotonic()
     with pytest.raises(sqlite3.OperationalError) as error:
-        con.execute(
-            "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 20000000) SELECT count(*) FROM r"
-        ).fetchall()
+        con.execute(f"SELECT {SLOW_CONDITION}").fetchall()
     assert time.monotonic() - started < 5
     assert query_error(error.value) == "the query took longer than 0.5 s"
 
 
 def test_query_error_unwraps_pandas_errors():
-    try:
-        try:
-            raise sqlite3.OperationalError("interrupted")
-        except sqlite3.OperationalError as e:
-            raise RuntimeError("Execution failed on sql ...") from e
-    except RuntimeError as e:
-        assert query_error(e) == f"the query took longer than {database.QUERY_TIMEOUT} s"
+    # as pandas raises it
+    error = RuntimeError("Execution failed on sql ...")
+    error.__cause__ = sqlite3.OperationalError("interrupted")
+    assert query_error(error) == f"the query took longer than {database.QUERY_TIMEOUT} s"
     assert query_error(ValueError("no such column: x")) == "no such column: x"
 
 
@@ -400,9 +402,8 @@ def test_run_query_on_a_database_being_written_to(tmp_path, make_database, monke
 def test_slow_queries_on_a_database_being_written_to(tmp_path, make_database, monkeypatch):
     make_database(rows=[(1, 1, 3, "G", b"ok")])
     monkeypatch.setattr(database, "LIVE_QUERY_TIMEOUT", 0.2)
-    where = "(WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 20000000) SELECT count(*) FROM r) > 0"
     with pytest.raises(TimeoutError) as error:
-        run_query(str(tmp_path / "test.sqlite"), "*", where, 100)
+        run_query(str(tmp_path / "test.sqlite"), "*", SLOW_CONDITION, 100)
     assert query_error(error.value).startswith("the query took longer than 0.2 s: stopped, because a glitch script")
 
 

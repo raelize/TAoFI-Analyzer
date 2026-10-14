@@ -9,7 +9,7 @@ from analyzer import database
 from analyzer.callbacks import column_defs
 from analyzer.config import COLORS
 from analyzer.table import Table
-from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, EXAMPLE_EXPERIMENTS
+from tests.conftest import EXAMPLE_ARGV, EXAMPLE_DATABASE, EXAMPLE_DIRECTORY, EXAMPLE_EXPERIMENTS, SLOW_CONDITION
 
 GRID = '{"index":["MATCH"],"type":"data-grid"}'
 GRIDS = '{"index":["ALL"],"type":"data-grid"}'
@@ -849,8 +849,7 @@ def test_query_errors(client, store):
 
 def test_slow_query(client, store, monkeypatch):
     monkeypatch.setattr(database, "QUERY_TIMEOUT", 0.5)
-    where = "(WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 20000000) SELECT count(*) FROM r) > 0"
-    assert query(client, store, where=where) == "ERROR: the query took longer than 0.5 s"
+    assert query(client, store, where=SLOW_CONDITION) == "ERROR: the query took longer than 0.5 s"
 
 
 def test_no_files_are_created(client, store):

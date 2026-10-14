@@ -1,7 +1,6 @@
 """Database access: which files may be read, read-only connections and queries."""
 
 import os
-import re
 import sqlite3
 import threading
 import time
@@ -199,12 +198,8 @@ def counting():
 
 
 def get_databases(directory):
-    # get all databases in directory
-    databases = []
-    for file in listdir(directory):
-        if re.search("^.*\\.sqlite$", file):
-            databases.append(file)
-    databases.sort(reverse=True)
+    # all databases in the directory (newest first: their names end with the date and time)
+    databases = sorted((file for file in listdir(directory) if file.endswith(".sqlite")), reverse=True)
 
     # transform to options; other sqlite files are shown, but can't be selected
     databases_options = []
@@ -398,8 +393,9 @@ def load_experiments(database_path, query, after=0, responses=None):
                 raise ValueError("the query must be a condition on the experiments (e.g. delay > 100)")
             for index, chunk in enumerate(list(zip(*rows, strict=True))[1:]):
                 if index == response:
-                    chunk = [responses.setdefault(r, r) for r in chunk]
-                values[index].extend(chunk)
+                    values[index].extend(responses.setdefault(r, r) for r in chunk)
+                else:
+                    values[index].extend(chunk)
             # stop before the system runs out of memory (and kills the analyzer)
             available = available_memory()
             if available is not None and available < MEMORY_RESERVE:

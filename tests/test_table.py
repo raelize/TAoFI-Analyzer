@@ -8,7 +8,10 @@ from analyzer.config import AnalyzerConfig
 from analyzer.dataset import get_dataset
 from analyzer.table import build_table, get_table, grid_filter_mask, per_response
 
-COLUMNS = "id integer, glitch_delay integer, normal_voltage real, note text, extra blob, empty integer, sometimes real, color text, response blob"
+COLUMNS = (
+    "id integer, glitch_delay integer, normal_voltage real, note text, extra blob, empty integer, sometimes real, "
+    "color text, response blob"
+)
 ROWS = [
     # id, glitch_delay, normal_voltage, note, extra, empty, sometimes, color, response
     (1, 10, 1.5, "a", b"\x00\xff", None, None, "G", b"OK"),

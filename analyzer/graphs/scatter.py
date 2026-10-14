@@ -1,5 +1,3 @@
-from dash.exceptions import PreventUpdate
-
 from analyzer.graphs.common import build_scatter, classification, legend_labels, shown_points, update_legend_labels
 
 
@@ -11,11 +9,7 @@ def scatter_func(x, y, fixgreen, dataset, config, _COLORS, *color_states):
     colors = dataset.colors_for(config)
     shown = shown_points(colors, config)
 
-    try:
-        fig = build_scatter(dataset, x, y, colors, config.jitter, shown=shown)
-    except Exception as e:
-        print(e)
-        raise PreventUpdate
+    fig = build_scatter(dataset, x, y, colors, config.jitter, shown=shown)
 
     fig.update_layout(
         title_text="",

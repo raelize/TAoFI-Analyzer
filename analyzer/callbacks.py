@@ -68,7 +68,8 @@ def register_callbacks(app):
             const triggered = dash_clientside.callback_context.triggered.map((t) => t.prop_id);
             const plot = document.querySelector("#graph .js-plotly-plot");
             // the graph keeps its zoom while this stays the same (see graph_revision())
-            const revision = store ? [store.directory, store.database, store.x, store.y, store.z, store.x2, store.y2, store.graph].join("|") : null;
+            const graph = ["directory", "database", "x", "y", "z", "x2", "y2", "graph"];
+            const revision = store ? graph.map((name) => store[name]).join("|") : null;
             if (triggered.includes("graph-store.data")) {
                 // e.g. auto refresh: still zoomed in the same graph; otherwise another graph, not zoomed
                 return zoomed && zoomed.revision === revision ? dash_clientside.no_update : null;
@@ -449,7 +450,9 @@ def register_callbacks(app):
             if (!selected || !store || !SELECTABLE.includes(store.graph)) {
                 return null;
             }
-            const same = { directory: store.directory, database: store.database, query: store.query, jitter: store.jitter };
+            const same = {
+                directory: store.directory, database: store.database, query: store.query, jitter: store.jitter,
+            };
             // the plots of the graph: their axes in the event, and the columns they show
             const plots = [["x", "y", store.x, store.y], ["x2", "y2", store.x2, store.y2]];
             for (const [xaxis, yaxis, x, y] of plots) {
@@ -457,7 +460,8 @@ def register_callbacks(app):
                     return { ...same, x: x, y: y, box: { x: selected.range[xaxis], y: selected.range[yaxis] } };
                 }
                 if (selected.lassoPoints && selected.lassoPoints[xaxis] && selected.lassoPoints[yaxis]) {
-                    return { ...same, x: x, y: y, lasso: { x: selected.lassoPoints[xaxis], y: selected.lassoPoints[yaxis] } };
+                    const lasso = { x: selected.lassoPoints[xaxis], y: selected.lassoPoints[yaxis] };
+                    return { ...same, x: x, y: y, lasso: lasso };
                 }
             }
             return null;
@@ -757,10 +761,12 @@ def experiment_card(dataset, config, index):
         if column == "response":
             continue
         if isinstance(value, bytes):
-            value = value.hex(" ")
-        if column == "color" and shown != value:
-            value = f"{value} (shown as {shown})"
-        values.append(html.Tr([html.Th(column, className="pe-3"), html.Td("" if pd.isna(value) else str(value))]))
+            text = value.hex(" ")
+        elif column == "color" and shown != value:
+            text = f"{value} (shown as {shown})"
+        else:
+            text = "" if pd.isna(value) else str(value)
+        values.append(html.Tr([html.Th(column, className="pe-3"), html.Td(text)]))
     values.append(
         html.Tr(
             [

@@ -20,6 +20,12 @@ EXAMPLE_ARGV = "--target /dev/ttyUSB1 --delay 1000 2000 --length 1000 5000"
 os.environ.setdefault("ANALYZER_DIRECTORY", EXAMPLE_DIRECTORY)
 
 
+# a condition that takes seconds (to test the time limits of queries)
+SLOW_CONDITION = (
+    "(WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 20000000) SELECT count(*) FROM r) > 0"
+)
+
+
 def free_port():
     """A TCP port nothing listens on (for starting the analyzer)."""
     with socket.socket() as s:
@@ -116,6 +122,7 @@ class DashClient:
                 found = find(child)
                 if found is not None:
                     return found
+            return None
 
         return find(self.client.get("/_dash-layout").get_json())
 

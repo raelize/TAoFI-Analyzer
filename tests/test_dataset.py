@@ -74,9 +74,9 @@ def test_recolor_is_cached_and_read_only(config):
     dataset = get_dataset(config)
     first = dataset.recolor(["ok"] + [None] * 7, COLOR_CODES, False)
     assert dataset.recolor(["ok"] + [None] * 7, COLOR_CODES, False) is first
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="read-only"):
         first[0] = "R"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="read-only"):
         dataset.base_colors[0] = "R"
 
 

@@ -244,7 +244,10 @@ def test_selecting_in_the_graph(page):
     page.click("#data-show-all")
     page.wait_for_function("!document.querySelector('#data-selection').innerText", timeout=10000)
     page.wait_for_function(
-        f"(() => {{ const grid = document.querySelector('[id*=\"data-grid\"]'); return dash_ag_grid.getApi(grid.id).getDisplayedRowCount() > {selected}; }})()",
+        f"""(() => {{
+            const grid = document.querySelector('[id*="data-grid"]');
+            return dash_ag_grid.getApi(grid.id).getDisplayedRowCount() > {selected};
+        }})()""",
         timeout=10000,
     )
 

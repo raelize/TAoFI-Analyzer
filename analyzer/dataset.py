@@ -202,7 +202,7 @@ def load_dataset(config, path, query, key, dataset):
     except Exception as e:
         message = f"{config.database}: {query_error(e)}"
         print(f"ERROR (get_dataset): {message}")
-        raise DatasetError(message)
+        raise DatasetError(message) from e
 
     missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
     if missing:
