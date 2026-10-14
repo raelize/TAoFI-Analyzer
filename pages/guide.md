@@ -29,6 +29,7 @@ The input fields are mandatory (i.e., otherwise nothing is shown).
 The graph types:
 
 - `scatter`: the experiments with the x and y parameters against each other, colored by their classification
+  With a column named `x` on the x-axis or `y` on the y-axis (e.g. a scan over the positions of a chip), the graph is shown like an image: the x-axis at the top, the y-axis going down, in a fixed size of 1000 by 1000 pixels.
 - `scatter2`: two scatter plots next to each other, each with its own x and y parameter (the right one: `x-axis (right)`, `y-axis (right)`); hiding a color in the legend hides it in both
 - `3d`: the x, y and z parameters against each other (the z axis is only shown for this graph); drag to rotate, scroll to zoom
 - `mega`: every parameter (number column, except `id`) against every other one, one plot per pair; the axes aren't used
