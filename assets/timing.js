@@ -6,7 +6,6 @@
         "graph.figure": "graph",
         "data.children": "data",
         "query-output.children": "query",
-        "tabs-content.children": "tab",
     };
 
     function labelFor(body) {

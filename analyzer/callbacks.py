@@ -249,13 +249,12 @@ def register_callbacks(app):
     @app.callback(
         Output("refresh-timer", "disabled"),
         Output("refresh-timer", "interval"),
-        Output("refresh-settings", "data"),
         Input("switch-autorefresh", "value"),
         Input("refresh-seconds", "value"),
     )
     def update_refresh_timer(enabled, seconds):
         seconds = max(1, int(seconds or 10))
-        return not enabled, seconds * 1000, {"enabled": bool(enabled), "seconds": seconds}
+        return not enabled, seconds * 1000
 
     # callback for updating store
     @app.callback(
@@ -579,12 +578,16 @@ def register_callbacks(app):
     # when the database changed (from its latest version, see get_dataset())
     @app.callback(
         Output("data-dbkey", "data"),
-        Input("data-refresh-timer", "n_intervals"),
+        Input("refresh-timer", "n_intervals"),
+        State("tabs", "value"),
         State("data-dbkey", "data"),
         State("config-store", "data"),
         prevent_initial_call=True,
     )
-    def refresh_data(n_intervals, shown, store):
+    def refresh_data(n_intervals, tab, shown, store):
+        if tab != "tab-data":
+            # (the data tab is made again when it's shown)
+            raise PreventUpdate
         config = AnalyzerConfig.from_store(store)
         path = database_path(config.directory, config.database)
         if path is None:
@@ -633,6 +636,9 @@ def register_callbacks(app):
     )
     @timed("data")
     def update_data(squeeze, wraptext, response_s, response_e, tab, show_all, store, hidden, selection):
+        if tab != "tab-data":
+            # (made when the data tab is shown)
+            raise PreventUpdate
         config = AnalyzerConfig.from_store(store)
 
         if not config.database:

@@ -1,17 +1,16 @@
 """The page layout and the contents of the tabs."""
 
+import json
 import os
 from dataclasses import asdict
 
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, dcc, html
-from dash.exceptions import PreventUpdate
+from dash import Input, Output, dcc, html
 
 from analyzer.config import COLORS, AnalyzerConfig, server_config
 from analyzer.database import data_directory, get_databases, is_local_request
 from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, graph_axes
 from analyzer.graphs.common import COLOR_CODES, COLOR_MAP
-from analyzer.timing import timed
 
 # the guide tab (relative to the code, not the current directory)
 GUIDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pages", "guide.md")
@@ -34,7 +33,33 @@ EXPERIMENT_HIDDEN = {**EXPERIMENT_SHOWN, "display": "none"}
 
 
 def create_layout(app):
-    app.layout = html.Div(
+    # (a function: the page is made for every request, e.g. for a local user or not)
+    app.layout = page
+
+    # All tabs are in the page, only the selected one is shown: switching tabs
+    # keeps them as they were (the graph isn't drawn again).
+    app.clientside_callback(
+        """
+        function (tab) {
+            if (tab === "tab-graph") {
+                // the graph may have been drawn while it was hidden (e.g. auto refresh): its size
+                const plot = document.querySelector("#graph .js-plotly-plot");
+                if (plot && plot._fullLayout) setTimeout(() => Plotly.Plots.resize(plot), 0);
+            }
+            return TABS.map((name) => (name === tab ? SHOWN : HIDDEN));
+        }
+        """.replace("TABS", json.dumps(list(TABS)))
+        .replace("SHOWN", json.dumps(PAGE_STYLE))
+        .replace("HIDDEN", json.dumps({**PAGE_STYLE, "display": "none"})),
+        [Output(f"{tab}-content", "style") for tab in TABS],
+        Input("tabs", "value"),
+    )
+
+
+def page():
+    """The page: the header, the tabs and their contents (as the presets of the server)."""
+    config = AnalyzerConfig.from_store(asdict(server_config))
+    return html.Div(
         [
             dcc.Store(id="config-store", data=asdict(server_config)),
             # the page's theme: light or dark (the button in the header)
@@ -46,8 +71,6 @@ def create_layout(app):
             # timings of the server callbacks (see timing.py)
             dcc.Store(id="timing-store"),
             dcc.Store(id="timing-last"),
-            # the auto refresh settings of the graph tab, for the timers of the tabs
-            dcc.Store(id="refresh-settings"),
             dcc.Store(id="data-refresh"),
             # the outline of the selection in the graph (see selection.py)
             dcc.Store(id="selection-store"),
@@ -97,7 +120,15 @@ def create_layout(app):
                 ],
                 style=PAGE_STYLE,
             ),
-            html.Div(id="tabs-content"),
+            # all tabs (only the selected one is shown, see create_layout())
+            *[
+                html.Div(
+                    contents(config),
+                    id=f"{tab}-content",
+                    style=PAGE_STYLE if tab == "tab-graph" else {**PAGE_STYLE, "display": "none"},
+                )
+                for tab, contents in TABS.items()
+            ],
         ],
         style={
             "width": "100%",
@@ -107,30 +138,13 @@ def create_layout(app):
         },
     )
 
-    @app.callback(
-        Output("tabs-content", "children"),
-        Input("tabs", "value"),
-        State("config-store", "data"),
-        State("refresh-settings", "data"),
-    )
-    @timed("tab")
-    def render_content(tab, store, refresh):
-        if tab not in TABS:
-            raise PreventUpdate
-        return html.Div(TABS[tab](AnalyzerConfig.from_store(store), refresh or {}), style=PAGE_STYLE)
+
+def refresh_timer():
+    """The auto refresh timer (set up on the graph tab, see update_refresh_timer())."""
+    return dcc.Interval(id="refresh-timer", interval=10_000, disabled=True)
 
 
-def refresh_timer(timer_id, refresh):
-    """An auto refresh timer of a tab, as set on the graph tab (see update_refresh_timer()).
-
-    Every tab that refreshes has its own: a callback with inputs on several
-    tabs (e.g. one timer for all of them) fails on the other tabs.
-    """
-    seconds = max(1, int(refresh.get("seconds") or 10))
-    return dcc.Interval(id=timer_id, interval=seconds * 1000, disabled=not refresh.get("enabled"))
-
-
-def graph_tab(config, refresh):
+def graph_tab(config):
     # the CLI/env presets are the initial store, so everything comes from the store
     local = is_local_request()
     directory = (config.directory if local else None) or server_config.directory
@@ -182,7 +196,7 @@ def graph_tab(config, refresh):
                             style={"width": "70px", "marginLeft": "5px"},
                             persistence=True,
                         ),
-                        refresh_timer("refresh-timer", refresh),
+                        refresh_timer(),
                         # while databases are counted in the background (see update_database_list())
                         dcc.Interval(id="count-timer", interval=1000, disabled=True),
                     ],
@@ -428,7 +442,7 @@ def directory_browser():
     )
 
 
-def data_tab(config, refresh):
+def data_tab(config):
     controls = dbc.Card(
         dbc.CardBody(
             [
@@ -493,19 +507,19 @@ def data_tab(config, refresh):
     )
 
     # auto refresh: the version of the database the grid shows (see refresh_data())
-    timer = html.Div([refresh_timer("data-refresh-timer", refresh), dcc.Store(id="data-dbkey", data=config.dbkey)])
+    timer = dcc.Store(id="data-dbkey", data=config.dbkey)
 
     return [controls, grid, timer]
 
 
-def information_tab(config, refresh):
+def information_tab(config):
     def card(header, id):
         return dbc.Card([dbc.CardHeader(header), dbc.CardBody(dcc.Markdown("", id=id))])
 
     return [card("Arguments:", "argv"), card("Points:", "points"), card("Store:", "printstore")]
 
 
-def database_tab(config, refresh):
+def database_tab(config):
     query = dbc.Card(
         dbc.CardBody(
             # all on one line
@@ -542,7 +556,7 @@ def database_tab(config, refresh):
     return [query, loading(html.Div(id="query-output", className="mt-2"))]
 
 
-def guide_tab(config, refresh):
+def guide_tab(config):
     with open(GUIDE, encoding="utf-8") as f:
         guide_text = f.read()
     return [dbc.Card(dbc.CardBody(dcc.Markdown(guide_text)))]

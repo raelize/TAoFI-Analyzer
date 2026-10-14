@@ -136,44 +136,43 @@ def query(client, store, select_columns="count(*)", where=""):
 #
 
 
-@pytest.mark.parametrize("tab", ["tab-graph", "tab-data", "tab-information", "tab-database", "tab-guide"])
-def test_tabs_render(client, store, tab):
-    code, response = client.call("tabs-content.children", {"tabs.value": tab, "config-store.data": store}, "tabs.value")
-    assert code == 200
-
-
-def test_graph_tab_shows_the_store(client, store):
-    store = dict(store, x="id", y="delay", z="length", jitter=3, graph="3d", fixgreen=False)
-    code, response = client.call(
-        "tabs-content.children", {"tabs.value": "tab-graph", "config-store.data": store}, "tabs.value"
-    )
-    values = {}
+def page_components(client):
+    """The props of every component (with an id) of the page."""
+    found = {}
 
     def walk(node):
         if isinstance(node, dict):
             props = node.get("props")
             if isinstance(props, dict) and isinstance(props.get("id"), str):
-                values[props["id"]] = props.get("value")
+                found[props["id"]] = props
             for child in node.values():
                 walk(child)
         elif isinstance(node, list):
             for child in node:
                 walk(child)
 
-    walk(response)
+    walk(client.client.get("/_dash-layout").get_json())
+    return found
+
+
+def test_all_tabs_are_in_the_page(client):
+    """Only the selected one is shown: switching tabs keeps them as they were."""
+    components = page_components(client)
+    for tab in ["tab-graph", "tab-data", "tab-information", "tab-database", "tab-guide"]:
+        hidden = components[f"{tab}-content"]["style"].get("display") == "none"
+        assert hidden is (tab != "tab-graph")
+
+
+def test_graph_tab_shows_the_presets(client, monkeypatch):
+    from analyzer.config import server_config
+
+    presets = {"database": EXAMPLE_DATABASE, "x": "id", "y": "delay", "z": "length", "graph": "3d", "fixgreen": False}
+    for name, value in presets.items():
+        monkeypatch.setattr(server_config, name, value)
+    values = {name: props.get("value") for name, props in page_components(client).items()}
     assert values["database-dropdown"] == EXAMPLE_DATABASE
-    assert (values["x-dropdown"], values["y-dropdown"], values["z-dropdown"], values["jitter-input"]) == (
-        "id",
-        "delay",
-        "length",
-        3,
-    )
+    assert (values["x-dropdown"], values["y-dropdown"], values["z-dropdown"]) == ("id", "delay", "length")
     assert (values["graph-dropdown"], values["switch-fixgreen"]) == ("3d", False)
-
-
-def test_unknown_tab(client, store):
-    code, _ = client.call("tabs-content.children", {"tabs.value": "tab-nope", "config-store.data": store}, "tabs.value")
-    assert code == 204
 
 
 #
@@ -353,9 +352,14 @@ def test_data_tab_auto_refresh(client, tmp_path, make_database):
     make_database(rows=[(1, 1, 1, "G", b"x")])
     store = dict(client.layout_store(), directory=str(tmp_path), database="test.sqlite")
 
-    def refresh(shown):
-        values = {"data-refresh-timer.n_intervals": 1, "data-dbkey.data": shown, "config-store.data": store}
-        return client.call("data-dbkey.data", values, "data-refresh-timer.n_intervals")
+    def refresh(shown, tab="tab-data"):
+        values = {
+            "refresh-timer.n_intervals": 1,
+            "tabs.value": tab,
+            "data-dbkey.data": shown,
+            "config-store.data": store,
+        }
+        return client.call("data-dbkey.data", values, "refresh-timer.n_intervals")
 
     code, response = refresh("")
     assert code == 200
@@ -363,6 +367,8 @@ def test_data_tab_auto_refresh(client, tmp_path, make_database):
     # unchanged: nothing to do
     assert refresh(shown)[0] == 204
     append(tmp_path / "test.sqlite")
+    # (another tab is shown: the data tab is made again when it's shown)
+    assert refresh(shown, "tab-graph")[0] == 204
     code, response = refresh(shown)
     assert code == 200 and response["data-dbkey"]["data"] != shown
 

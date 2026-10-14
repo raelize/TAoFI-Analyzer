@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 
@@ -32,6 +33,12 @@ def server():
 
 def analyzer(directory, database):
     """Run the analyzer for ``directory`` (with ``database`` and the axes preselected); yields its URL."""
+    # its output: a file, not a pipe (a pipe nobody reads fills up with the request log and the server hangs)
+    with tempfile.TemporaryFile() as output:
+        yield from run_analyzer(directory, database, output)
+
+
+def run_analyzer(directory, database, output):
     port = free_port()
     process = subprocess.Popen(
         [
@@ -48,9 +55,14 @@ def analyzer(directory, database):
             "length",
         ],
         cwd=REPO,
-        stdout=subprocess.PIPE,
+        stdout=output,
         stderr=subprocess.STDOUT,
     )
+
+    def read_output():
+        output.seek(0)
+        return output.read().decode(errors="replace")
+
     url = f"http://127.0.0.1:{port}/"
     for _ in range(100):
         try:
@@ -60,13 +72,15 @@ def analyzer(directory, database):
             time.sleep(0.1)
     else:
         process.kill()
-        pytest.fail("the analyzer did not start: " + process.communicate()[0].decode(errors="replace"))
+        process.wait()
+        pytest.fail("the analyzer did not start: " + read_output())
 
     yield url
 
     process.terminate()
-    output = process.communicate(timeout=10)[0].decode(errors="replace")
-    assert "Traceback" not in output, output
+    process.wait(timeout=10)
+    log = read_output()
+    assert "Traceback" not in log, log
 
 
 @pytest.fixture(scope="module")
@@ -103,7 +117,7 @@ def page(server, browser):
 
 
 def open_tab(page, name):
-    page.get_by_text(name, exact=True).click()
+    page.locator("#tabs").get_by_text(name, exact=True).click()
 
 
 def axis_title(page, axis):
@@ -176,17 +190,15 @@ def test_enter_applies_the_text_fields(page):
     assert legend_title(page) != "Classification ( 6,843 ):"
     assert page.input_value("#query-input") == "delay > 1900"
     assert page.input_value("#recolor-red") == "^"
-    # switching tabs doesn't apply what was typed
+    # switching tabs keeps what was typed, without applying it
+    title = legend_title(page)
     page.fill("#query-input", "delay > 1950")
     open_tab(page, "Data")
     page.wait_for_selector(".ag-row", timeout=20000)
     open_tab(page, "Graph")
-    page.wait_for_function(GRAPH_READY, timeout=20000)
     page.wait_for_timeout(1000)
-    assert page.input_value("#query-input") == "delay > 1900"
-    title = legend_title(page)
-    page.press("#query-input", "End")
-    page.fill("#query-input", "delay > 1950")
+    assert page.input_value("#query-input") == "delay > 1950"
+    assert legend_title(page) == title
     page.press("#query-input", "Enter")
     page.wait_for_function(f"{PLOT}.layout.legend.title.text !== {title!r}", timeout=10000)
 
@@ -287,6 +299,20 @@ def test_data_tab(page):
     cells = page.eval_on_selector_all('.ag-row [col-id="min(delay)"]', "cells => cells.map(c => c.innerText)")
     values = [int(c) for c in cells if c.strip()]
     assert values and all(v > 1900 for v in values)
+
+
+def test_the_graph_stays_drawn_when_switching_tabs(page):
+    """All tabs are in the page: the graph isn't drawn again (nor asked for)."""
+    page.evaluate(f"window.drawn = {PLOT}.data[0]")
+    requests = []
+    page.on(
+        "request", lambda r: "_dash-update" in r.url and "graph.figure" in (r.post_data or "") and requests.append(r)
+    )
+    open_tab(page, "Information")
+    open_tab(page, "Graph")
+    page.wait_for_timeout(1000)
+    assert page.evaluate(f"{PLOT}.data[0] === window.drawn")
+    assert not requests
 
 
 def test_selection_survives_tab_switches(page):
