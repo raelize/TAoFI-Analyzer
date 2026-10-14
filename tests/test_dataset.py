@@ -202,3 +202,22 @@ def test_removed_experiments_load_the_database_again(config, loads):
     con.close()
     assert list(get_dataset(config).df["id"]) == [1, 2, 3]
     assert loads == [0, 0]
+
+
+def test_caches_are_emptied_when_memory_runs_out(config, monkeypatch, make_database):
+    from analyzer import database, table
+
+    make_database("other.sqlite", rows=ROWS)
+    other = AnalyzerConfig(directory=config.directory, database="other.sqlite")
+    table.get_table(get_dataset(other), other, True, None, None)
+    # not enough memory, until the caches are emptied
+    monkeypatch.setattr(database, "available_memory",
+                        lambda: 2**40 if not (dataset_module._DATASET_CACHE or table._TABLE_CACHE) else 0)
+    assert len(get_dataset(config).df) == 5
+    assert list(dataset_module._DATASET_CACHE) == [(os.path.join(config.directory, "test.sqlite"), "")]
+    assert not table._TABLE_CACHE
+    # still not enough after emptying the caches: the database really doesn't fit
+    monkeypatch.setattr(database, "available_memory", lambda: 0)
+    config.query = "delay > 1"
+    with pytest.raises(dataset_module.DatasetError, match="not enough memory"):
+        get_dataset(config)

@@ -5,13 +5,23 @@ from collections import OrderedDict
 import numpy as np
 import pandas as pd
 
-from analyzer.dataset import Dataset
+from analyzer.dataset import CACHE_CLEARERS, Dataset
 
 # Tables are cached per worker process.
 _TABLE_CACHE = OrderedDict()
 _TABLE_CACHE_SIZE = 3
 _CACHE_LOCK = threading.Lock()
 _FILTER_CHUNK = 1000  # distinct responses decoded at a time when filtering on them
+
+
+def _clear_cache():
+    with _CACHE_LOCK:
+        cleared = bool(_TABLE_CACHE)
+        _TABLE_CACHE.clear()
+    return cleared
+
+
+CACHE_CLEARERS.append(_clear_cache)
 
 
 class Table:

@@ -1,4 +1,5 @@
 """The experiments of a database (filtered by the query) and their colors."""
+import gc
 import re
 import threading
 from collections import OrderedDict
@@ -22,6 +23,38 @@ _DATASET_CACHE = OrderedDict()
 _DATASET_CACHE_SIZE = 3
 _CACHE_LOCK = threading.Lock()
 _RECOLOR_CACHE_SIZE = 8
+
+# functions that empty a cache (and return whether there was anything in it),
+# called when a database doesn't fit in memory; see free_memory()
+CACHE_CLEARERS = []
+
+
+def _clear_cache():
+    with _CACHE_LOCK:
+        cleared = bool(_DATASET_CACHE)
+        _DATASET_CACHE.clear()
+    return cleared
+
+
+CACHE_CLEARERS.append(_clear_cache)
+
+
+def free_memory():
+    """Empty the caches; whether there was anything to free."""
+    cleared = [clear() for clear in CACHE_CLEARERS]
+    gc.collect()
+    return any(cleared)
+
+
+def with_free_memory(load):
+    """``load()``, again after emptying the caches if there wasn't enough memory for it."""
+    try:
+        return load()
+    except MemoryError:
+        if not free_memory():
+            raise
+        print("WARNING: not enough memory, emptied the caches")
+        return load()
 
 
 class Dataset:
@@ -138,13 +171,13 @@ def get_dataset(config):
 
     try:
         if dataset is not None and appended_to(dataset.key[:-1], version) and max_rowid(path) >= dataset.last_rowid:
-            dataset = extended(dataset, key, path, query)
+            dataset = with_free_memory(lambda: extended(dataset, key, path, query))
         else:
             # another file, or changed otherwise: the old version is of no use (free it first)
             with _CACHE_LOCK:
                 _DATASET_CACHE.pop(cache_key, None)
             dataset = None
-            df, last_rowid = load_experiments(path, query)
+            df, last_rowid = with_free_memory(lambda: load_experiments(path, query))
     except Exception as e:
         message = f"{config.database}: {query_error(e)}"
         print("ERROR (get_dataset): %s" % message)
