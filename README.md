@@ -42,7 +42,7 @@ For better performance you can use `gunicorn` instead of the built-in server:
 $ ANALYZER_DIRECTORY=<DIRECTORY> gunicorn taofi-analyzer:server
 ```
 
-With `gunicorn` the analyzer listens on `127.0.0.1:9393` (`ANALYZER_IP`/`ANALYZER_PORT`). `ANALYZER_DATABASE`, `ANALYZER_X` and `ANALYZER_Y` preselect a database and the axes.
+With `gunicorn` the analyzer also listens on `127.0.0.1:8000` (`ANALYZER_IP`/`ANALYZER_PORT`). `ANALYZER_DATABASE`, `ANALYZER_X` and `ANALYZER_Y` preselect a database and the axes.
 
 ## Security
 

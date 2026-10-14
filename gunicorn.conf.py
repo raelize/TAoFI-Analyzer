@@ -1,7 +1,7 @@
 import os
 
 # Server socket
-bind = f"{os.getenv('ANALYZER_IP', '127.0.0.1')}:{os.getenv('ANALYZER_PORT', '9393')}"
+bind = f"{os.getenv('ANALYZER_IP', '127.0.0.1')}:{os.getenv('ANALYZER_PORT', '8000')}"
 backlog = 2048
 
 # Worker processes
