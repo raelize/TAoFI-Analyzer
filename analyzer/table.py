@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from analyzer.dataset import CACHE_CLEARERS, Dataset
+from analyzer.selection import applies, selected_rows, selection_key
 
 # Tables are cached per worker process.
 _TABLE_CACHE = OrderedDict()
@@ -41,6 +42,8 @@ class Table:
         self._text = None
         self._hex = None
         self._distinct = None  # (codes, distinct responses)
+        # the number of experiments selected in the graph (None: all experiments)
+        self.selected = None
         self._selection = None  # (sort_model, filter_model) -> row indices
         self._lock = threading.Lock()
 
@@ -204,13 +207,17 @@ def grid_filter_mask(values, model):
     return np.asarray(result, dtype=bool)
 
 
-def build_table(dataset, colors, squeeze_records, response_s, response_e):
+def build_table(dataset, colors, squeeze_records, response_s, response_e, rows=None):
     """Data tab table with the columns of the database (in database order).
 
     Squeezed, numeric (int/float) columns become a "<column> >" (min) and
     "<column> <" (max) pair; other columns show the value of the first experiment.
+    ``rows``: only these experiments (e.g. those selected in the graph).
     """
     df = dataset.df
+    if rows is not None:
+        df = df.iloc[rows].reset_index(drop=True)
+        colors = colors[rows]
 
     def shown(column):
         if column in ("response", "amount", "rlen", "hex(response)"):
@@ -260,15 +267,19 @@ def build_table(dataset, colors, squeeze_records, response_s, response_e):
     return Table(squeezed.reset_index(drop=True), responses, squeezed=True, numeric=ranges | {"amount"})
 
 
-def get_table(dataset, config, squeeze_records, response_s, response_e):
-    """Cached table for the data tab, colored as the graph for ``config``."""
-    key = (dataset.key, Dataset.color_setting(config), bool(squeeze_records), response_s, response_e)
+def get_table(dataset, config, squeeze_records, response_s, response_e, selection=None):
+    """Cached table for the data tab, colored as the graph for ``config``; only the
+    experiments of ``selection`` (see selection.py) if it applies."""
+    key = (dataset.key, Dataset.color_setting(config), bool(squeeze_records), response_s, response_e,
+           selection_key(selection) if applies(selection, config) else None)
     with _CACHE_LOCK:
         table = _TABLE_CACHE.get(key)
         if table is not None:
             _TABLE_CACHE.move_to_end(key)
             return table
-    table = build_table(dataset, dataset.colors_for(config), squeeze_records, response_s, response_e)
+    rows = selected_rows(dataset, config, selection)
+    table = build_table(dataset, dataset.colors_for(config), squeeze_records, response_s, response_e, rows)
+    table.selected = None if rows is None else len(rows)
     with _CACHE_LOCK:
         _TABLE_CACHE[key] = table
         while len(_TABLE_CACHE) > _TABLE_CACHE_SIZE:

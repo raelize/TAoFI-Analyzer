@@ -35,6 +35,8 @@ The graph types:
 
 Click a point in the graph to see its experiment below the graph: all its columns, its response (as text and hex) and how many experiments have the same response. This needs `Show hover info on the graph` to be on.
 
+To see the experiments in a region of the graph, select it with `Box Select` or `Lasso Select` (in the toolbar of the graph; `scatter` and `scatter2`) and open the data tab: it shows only those experiments, until you click `Show all` there or select another region. Double click the graph to clear the selection.
+
 At the bottom of the graph you can recolor the experiments fed into the graph engine.
 
 The first field is the qualifier (i.e., `re.search(<qualifier>, response))`) and the second field is the label.

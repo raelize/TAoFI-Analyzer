@@ -167,6 +167,37 @@ def test_clicking_a_point(page):
     assert "delay" in page.inner_text("#experiment")
 
 
+def grid_rows(page):
+    return page.evaluate("""(() => {
+        const grid = document.querySelector('[id*="data-grid"]');
+        return dash_ag_grid.getApi(grid.id).getDisplayedRowCount();
+    })()""")
+
+
+def test_selecting_in_the_graph(page):
+    # drag a box (select mode) from delay 1100, length 4000 to delay 1500, length 3000
+    page.evaluate(f"Plotly.relayout({PLOT}, {{dragmode: 'select'}})")
+    x0, y0, x1, y1 = page.evaluate(f"""(() => {{
+        const layout = {PLOT}._fullLayout, x = layout.xaxis, y = layout.yaxis;
+        return [x._offset + x.d2p(1100), y._offset + y.d2p(4000), x._offset + x.d2p(1500), y._offset + y.d2p(3000)];
+    }})()""")
+    box = page.locator("#graph .js-plotly-plot").bounding_box()
+    page.mouse.move(box["x"] + x0, box["y"] + y0)
+    page.mouse.down()
+    page.mouse.move(box["x"] + x1, box["y"] + y1, steps=10)
+    page.mouse.up()
+    page.wait_for_timeout(500)
+    open_tab(page, "Data")
+    page.wait_for_selector(".ag-row", timeout=20000)
+    page.wait_for_function("document.querySelector('#data-selection').innerText.includes('selected in the graph')", timeout=10000)
+    assert "(delay 1" in page.inner_text("#data-selection")
+    page.wait_for_timeout(500)
+    selected = grid_rows(page)
+    page.click("#data-show-all")
+    page.wait_for_function("!document.querySelector('#data-selection').innerText", timeout=10000)
+    page.wait_for_function(f"(() => {{ const grid = document.querySelector('[id*=\"data-grid\"]'); return dash_ag_grid.getApi(grid.id).getDisplayedRowCount() > {selected}; }})()", timeout=10000)
+
+
 def test_data_tab(page):
     open_tab(page, "Data")
     page.wait_for_selector(".ag-row", timeout=20000)

@@ -51,12 +51,13 @@ def graph(client, store, hover=True):
     return client.call("graph.figure", {"graph-store.data": store, "switch-hover.value": hover}, "graph-store.data")
 
 
-def data(client, store, squeeze=False, hidden=(), wraptext=False):
+def data(client, store, squeeze=False, hidden=(), wraptext=False, selection=None, trigger="tabs.value"):
     values = {
         "switch-squeezedata.value": squeeze, "switch-wraptext.value": wraptext, "response_s.value": None,
         "response_e.value": None, "tabs.value": "tab-data", "config-store.data": store, "data-hidden-columns.data": list(hidden),
+        "selection-store.data": selection, "data-show-all.n_clicks": 1 if trigger == "data-show-all.n_clicks" else 0,
     }
-    return client.call("data.children", values, "tabs.value")
+    return client.call("data.children", values, trigger)
 
 
 def get_rows(client, store, grid_id, squeeze=False, start=0, end=100, sort=(), filters=None):
@@ -213,6 +214,21 @@ def test_auto_refresh_keeps_the_applied_text_fields(client, tmp_path, make_datab
     refreshed = response["config-store"]["data"]
     assert refreshed["dbkey"] != store["dbkey"]
     assert (refreshed["query"], refreshed["colors"]["red"][0]) == ("delay > 0", "x")
+
+
+def test_data_of_a_selection(client, store):
+    selection = {"directory": store["directory"], "database": store["database"], "query": store["query"], "jitter": store["jitter"],
+                 "x": "delay", "y": "length", "box": {"x": [1000, 1100], "y": [1000, 2000]}}
+    code, response = data(client, store, selection=selection)
+    note = response["data-selection"]["children"]
+    assert note.startswith("Showing the ") and "selected in the graph (delay 1000–1100, length 1000–2000)" in note
+    assert response["data-selection-bar"]["style"] == {}
+    # Show all
+    code, response = data(client, store, selection=selection, trigger="data-show-all.n_clicks")
+    assert response["data-selection-bar"]["style"] == {"display": "none"}
+    # (the second callback with this output: its id has an @)
+    code, response = client.call("selection-store.data@", {"data-show-all.n_clicks": 1}, "data-show-all.n_clicks")
+    assert response["selection-store"]["data"] is None
 
 
 def test_data_tab_auto_refresh(client, tmp_path, make_database):

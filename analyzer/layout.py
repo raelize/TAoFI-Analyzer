@@ -34,6 +34,8 @@ def create_layout(app):
             # the auto refresh settings of the graph tab, for the timers of the tabs
             dcc.Store(id="refresh-settings"),
             dcc.Store(id="data-refresh"),
+            # the outline of the selection in the graph (see selection.py)
+            dcc.Store(id="selection-store"),
             html.Div(
                 [
                     html.H4("Research by Raelize"),
@@ -315,6 +317,16 @@ def data_tab(config, refresh):
                     className="mb-0",
                 ),
                 dcc.Dropdown(id="data-columns", multi=True, placeholder="columns to show", className="mt-2"),
+                # the experiments selected in the graph (if any)
+                html.Div(
+                    [
+                        html.Span(id="data-selection", className="me-2"),
+                        dbc.Button("Show all", id="data-show-all", n_clicks=0, size="sm", color="secondary"),
+                    ],
+                    id="data-selection-bar",
+                    className="mt-2",
+                    style={"display": "none"},
+                ),
             ]
         )
     )

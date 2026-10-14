@@ -1,5 +1,7 @@
 """The callbacks of the app (except the tab contents, see layout.py)."""
+import json
 import os
+import zlib
 from dataclasses import asdict
 
 import dash_bootstrap_components as dbc
@@ -16,6 +18,7 @@ from analyzer.database import (counting, data_directory, database_path, file_key
 from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
 from analyzer.layout import axis_style
+from analyzer.selection import SELECTABLE, describe, selection_key
 from analyzer.timing import register_timing, timed
 from analyzer.graphs import AXES, AXIS_NAMES, GRAPH_PLOTS, GRAPHS, graph_axes
 from analyzer.graphs.common import clicked_experiment, message_figure
@@ -355,6 +358,34 @@ def register_callbacks(app):
             return result
         raise PreventUpdate
 
+    # callback for the selection in the graph (box or lasso select): only its
+    # outline, the selected points can be a million (see selection.py)
+    app.clientside_callback(
+        """
+        function (selected, store) {
+            if (!selected || !store || !SELECTABLE.includes(store.graph)) {
+                return null;
+            }
+            const same = { directory: store.directory, database: store.database, query: store.query, jitter: store.jitter };
+            // the plots of the graph: their axes in the event, and the columns they show
+            const plots = [["x", "y", store.x, store.y], ["x2", "y2", store.x2, store.y2]];
+            for (const [xaxis, yaxis, x, y] of plots) {
+                if (selected.range && selected.range[xaxis] && selected.range[yaxis]) {
+                    return { ...same, x: x, y: y, box: { x: selected.range[xaxis], y: selected.range[yaxis] } };
+                }
+                if (selected.lassoPoints && selected.lassoPoints[xaxis] && selected.lassoPoints[yaxis]) {
+                    return { ...same, x: x, y: y, lasso: { x: selected.lassoPoints[xaxis], y: selected.lassoPoints[yaxis] } };
+                }
+            }
+            return null;
+        }
+        """.replace("SELECTABLE", json.dumps(list(SELECTABLE))),
+        Output("selection-store", "data"),
+        Input("graph", "selectedData"),
+        State("graph-store", "data"),
+        prevent_initial_call=True,
+    )
+
     # callback for the experiment clicked in the graph
     @app.callback(
         Output("experiment", "children"),
@@ -423,37 +454,62 @@ def register_callbacks(app):
         Output("data", "children"),
         Output("data-columns", "options"),
         Output("data-columns", "value"),
+        Output("data-selection", "children"),
+        Output("data-selection-bar", "style"),
         Input("switch-squeezedata", "value"),
         Input("switch-wraptext", "value"),
         Input("response_s", "value"),
         Input("response_e", "value"),
         Input("tabs", "value"),
+        Input("data-show-all", "n_clicks"),
         State("config-store", "data"),
         State("data-hidden-columns", "data"),
+        State("selection-store", "data"),
         prevent_initial_call=False,
     )
     @timed("data")
-    def update_data(squeeze, wraptext, response_s, response_e, tab, store, hidden):
+    def update_data(squeeze, wraptext, response_s, response_e, tab, show_all, store, hidden, selection):
         config = AnalyzerConfig.from_store(store)
 
         if not config.database:
             raise PreventUpdate
+
+        if ctx.triggered_id == "data-show-all" and show_all:
+            # (the selection-store is emptied by show_all())
+            selection = None
 
         # squeeze data (or not); only the column layout is needed here, the
         # rows are fetched page by page by get_rows()
         try:
             dataset = get_dataset(config)
         except DatasetError as e:
-            return html.Div(str(e), className="text-danger m-3"), [], []
-        table = get_table(dataset, config, squeeze, response_s, response_e)
+            return html.Div(str(e), className="text-danger m-3"), [], [], "", {"display": "none"}
+        table = get_table(dataset, config, squeeze, response_s, response_e, selection)
         hidden = set(hidden or [])
 
         # a new id per grid configuration makes the grid remount and re-request its rows
-        grid_id = {"type": "data-grid", "index": f"{int(bool(squeeze))}-{int(bool(wraptext))}-{response_s}-{response_e}"}
+        selected = zlib.crc32(selection_key(selection).encode()) if table.selected is not None else ""
+        grid_id = {"type": "data-grid", "index": f"{int(bool(squeeze))}-{int(bool(wraptext))}-{response_s}-{response_e}-{selected}"}
         grid = data_grid(grid_id, column_defs(table, wraptext, hidden), wraptext)
 
+        if table.selected is None:
+            note, bar = "", {"display": "none"}
+        else:
+            note, bar = f"Showing {describe(selection, table.selected)}.", {}
+
         shown = [column for column in table.columns if column not in hidden]
-        return grid, table.columns, shown
+        return grid, table.columns, shown, note, bar
+
+    @app.callback(
+        Output("selection-store", "data", allow_duplicate=True),
+        Input("data-show-all", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def show_all(n_clicks):
+        # (also called when the data tab is shown: the button is new then)
+        if not n_clicks:
+            raise PreventUpdate
+        return None
 
     # callback for the column selector of the data tab: show/hide columns without rebuilding the grid
     @app.callback(
@@ -487,10 +543,11 @@ def register_callbacks(app):
         State("switch-squeezedata", "value"),
         State("response_s", "value"),
         State("response_e", "value"),
+        State("selection-store", "data"),
         prevent_initial_call=True,
     )
     @timed("rows", base="data")
-    def get_rows(request, store, squeeze, response_s, response_e):
+    def get_rows(request, store, squeeze, response_s, response_e, selection):
         if request is None:
             raise PreventUpdate
 
@@ -498,7 +555,7 @@ def register_callbacks(app):
         if not config.database:
             raise PreventUpdate
 
-        table = get_table(get_dataset(config), config, squeeze, response_s, response_e)
+        table = get_table(get_dataset(config), config, squeeze, response_s, response_e, selection)
         # the grid asks for _PAGE_SIZE rows at a time; never send more than _MAX_ROWS at once
         start = max(0, int(request.get("startRow") or 0))
         end = min(int(request.get("endRow") or start + _PAGE_SIZE), start + _MAX_ROWS)
