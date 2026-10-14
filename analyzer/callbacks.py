@@ -20,8 +20,8 @@ from analyzer.table import get_table
 from analyzer.layout import axis_style
 from analyzer.selection import SELECTABLE, describe, selection_key
 from analyzer.timing import register_timing, timed
-from analyzer.graphs import AXES, AXIS_NAMES, GRAPH_PLOTS, GRAPHS, graph_axes
-from analyzer.graphs.common import clicked_experiment, message_figure
+from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, PLOT_AXES, graph_axes
+from analyzer.graphs.common import clicked_experiment, message_figure, plotted_at
 
 # the text fields of the graph tab; applied by Update or enter (see update_store())
 TEXT_FIELDS = ["query-input", "jitter-input"] + [f"recolor-{color}" for color in COLORS] + [f"recolor-{color}-label" for color in COLORS]
@@ -407,10 +407,14 @@ def register_callbacks(app):
         except DatasetError as e:
             return html.Div(str(e), className="text-danger")
         # the traces are the colors of the graph, see color_traces()
-        index = clicked_experiment(dataset.colors_for(config), points[0].get("curveNumber", 0), points[0]["pointNumber"],
-                                   GRAPH_PLOTS.get(config.graph, 1))
-        if index is None:
-            # (the database was loaded again in the meantime)
+        plots = PLOT_AXES.get(config.graph, [{}])
+        clicked = clicked_experiment(dataset.colors_for(config), points[0].get("curveNumber", 0), points[0]["pointNumber"],
+                                     len(plots))
+        if clicked is not None:
+            index, plot = clicked
+            columns = {coordinate: getattr(config, axis) for coordinate, axis in plots[plot].items()}
+        if clicked is None or not plotted_at(dataset, index, columns, config.jitter, points[0]):
+            # (a graph of another version of the database: it was drawn again in the meantime)
             return "The database changed: click the point again."
         return experiment_card(dataset, config, index)
 

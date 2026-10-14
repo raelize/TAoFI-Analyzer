@@ -24,9 +24,13 @@ GRAPH_AXES = {
 }
 
 
-# graph types with more than one plot (each with the traces of color_traces())
-GRAPH_PLOTS = {
-    "scatter2": 2,
+# the plots of a graph type (each with the traces of color_traces()): the axis
+# of each coordinate of a clicked point (see show_experiment()); a graph type
+# not listed has one plot, without these coordinates
+PLOT_AXES = {
+    "scatter": [{"x": "x", "y": "y"}],
+    "scatter2": [{"x": "x", "y": "y"}, {"x": "x2", "y": "y2"}],
+    "3d": [{"x": "x", "y": "y", "z": "z"}],
 }
 
 

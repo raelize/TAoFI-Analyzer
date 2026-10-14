@@ -391,8 +391,8 @@ def test_graph_keeps_its_zoom(client, store):
     assert revision(store) != revision(dict(store, graph="mega"))
 
 
-def click(client, store, curve, point):
-    values = {"graph.clickData": {"points": [{"curveNumber": curve, "pointNumber": point}]}, "config-store.data": store}
+def click(client, store, curve, point, **coordinates):
+    values = {"graph.clickData": {"points": [{"curveNumber": curve, "pointNumber": point, **coordinates}]}, "config-store.data": store}
     return client.call("experiment.children", values, "graph.clickData")
 
 
@@ -423,6 +423,12 @@ def test_clicked_experiment(client, tmp_path, make_database):
     scatter2 = dict(store, graph="scatter2", x2="length", y2="id")
     assert "id 4" in text(click(client, scatter2, 3, 0)[1]["experiment"]["children"])
     assert "id 2" in text(click(client, scatter2, 2, 1)[1]["experiment"]["children"])
+    # the clicked point is where the experiment is plotted
+    assert "id 2" in text(click(client, store, 0, 1, x=20, y=3)[1]["experiment"]["children"])
+    assert "id 2" in text(click(client, scatter2, 2, 1, x=3, y=2)[1]["experiment"]["children"])
+    for curve, point, at, graph_store in [(0, 1, {"x": 30, "y": 3}, store), (2, 1, {"x": 20, "y": 3}, scatter2)]:
+        code, response = click(client, graph_store, curve, point, **at)
+        assert text(response["experiment"]["children"]) == "The database changed: click the point again."
     # e.g. a graph of before the database was loaded again
     for curve, point in [(0, 3), (2, 0)]:
         code, response = click(client, store, curve, point)

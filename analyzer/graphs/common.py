@@ -89,16 +89,34 @@ def color_traces(colors):
 
 
 def clicked_experiment(colors, curve, point, plots=1):
-    """The experiment (row) of point ``point`` of trace ``curve``, or None (not in this graph).
+    """(experiment (row), plot) of point ``point`` of trace ``curve``, or None (not in this graph).
 
     A graph with several ``plots`` (scatter2) has these traces for each plot.
     """
     traces = color_traces(colors)
     if not 0 <= curve < len(traces) * plots:
         return None
-    curve %= len(traces)
+    plot, curve = divmod(curve, len(traces))
     rows = np.flatnonzero(traces[curve][1])
-    return int(rows[point]) if 0 <= point < len(rows) else None
+    return (int(rows[point]), plot) if 0 <= point < len(rows) else None
+
+
+def plotted_at(dataset, row, columns, jitter, clicked):
+    """Whether experiment ``row`` is plotted at ``clicked`` (coordinate -> value, e.g. x -> 1100),
+    ``columns``: the column of each coordinate."""
+    for coordinate, column in columns.items():
+        if coordinate not in clicked or column not in dataset.df.columns:
+            continue
+        # (as sent to the browser: compact() makes floats float32)
+        value = compact(axis_values(dataset, column, jitter)[row:row + 1])[0]
+        try:
+            if not np.isclose(float(value), float(clicked[coordinate]), rtol=1e-6, atol=0):
+                return False
+        except (TypeError, ValueError):
+            # e.g. a text column (categories)
+            if str(value) != str(clicked[coordinate]):
+                return False
+    return True
 
 
 def count_colors(colors):
