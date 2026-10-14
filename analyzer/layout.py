@@ -126,89 +126,91 @@ def graph_tab(config, refresh):
 
     query = dbc.Card(
         dbc.CardBody(
-            html.Div(
-                [
-                    html.Button("Update", id="update-button", n_clicks=0, style={"width": "100px"}),
-                    html.Datalist(
-                        id="examples",
-                        children=[
-                            html.Option(value="match_string(response, 'ets')"),
-                            html.Option(value="match_hex(response, '661b')"),
-                            html.Option(value="color = 'G'"),
-                            html.Option(value="delay > 100"),
-                            html.Option(value="length > 100"),
-                        ],
-                    ),
-                    dcc.Input(
-                        id="query-input",
-                        type="text",
-                        list="examples",
-                        # (as applied; see update_store())
-                        value=config.query or "",
-                        style={"width": "100%", "display": "inline-block"},
-                        placeholder="SELECT * FROM experiments WHERE",
-                    ),
-                    dbc.Switch(
-                        id="switch-autorefresh",
-                        value=False,
-                        label="Auto refresh",
-                        # (centered like the fields next to it: by default bootstrap puts it a bit higher)
-                        className="ms-3 mb-0 text-nowrap d-flex align-items-center",
-                        input_style={"marginTop": 0},
-                        label_style={"marginLeft": "0.5em", "marginBottom": 0},
-                        persistence=True,
-                    ),
-                    dcc.Input(
-                        id="refresh-seconds",
-                        type="number",
-                        value=10,
-                        min=1,
-                        step=1,
-                        placeholder="sec",
-                        style={"width": "70px", "marginLeft": "5px"},
-                        persistence=True,
-                    ),
-                    refresh_timer("refresh-timer", refresh),
-                    # while databases are counted in the background (see update_database_list())
-                    dcc.Interval(id="count-timer", interval=1000, disabled=True),
-                ],
-                style={"display": "flex", "alignItems": "center"},
-            )
+            [
+                # Update, the directory (only local users may pick another one, see
+                # data_directory()) and auto refresh
+                html.Div(
+                    [
+                        html.Button("Update", id="update-button", n_clicks=0, style={"width": "100px"}),
+                        # (a plain button, like Update)
+                        html.Button(
+                            "Browse…",
+                            id="directory-browse",
+                            n_clicks=0,
+                            disabled=not local,
+                            className="mx-2",
+                            style={"width": "100px"},
+                        ),
+                        dbc.Input(
+                            id="directory-input",
+                            type="text",
+                            value=directory,
+                            debounce=True,
+                            disabled=not local,
+                            placeholder="directory with databases (press enter to apply)",
+                            size="sm",
+                            style={"flex": 1, "minWidth": 0, "fontSize": "1rem"},
+                        ),
+                        dbc.Switch(
+                            id="switch-autorefresh",
+                            value=False,
+                            label="Auto refresh",
+                            # (centered like the fields next to it: by default bootstrap puts it a bit higher)
+                            className="ms-3 mb-0 text-nowrap d-flex align-items-center",
+                            input_style={"marginTop": 0},
+                            label_style={"marginLeft": "0.5em", "marginBottom": 0},
+                            persistence=True,
+                        ),
+                        dcc.Input(
+                            id="refresh-seconds",
+                            type="number",
+                            value=10,
+                            min=1,
+                            step=1,
+                            placeholder="sec",
+                            style={"width": "70px", "marginLeft": "5px"},
+                            persistence=True,
+                        ),
+                        refresh_timer("refresh-timer", refresh),
+                        # while databases are counted in the background (see update_database_list())
+                        dcc.Interval(id="count-timer", interval=1000, disabled=True),
+                    ],
+                    style={"display": "flex", "alignItems": "center"},
+                ),
+                # the query (applied with Update or enter)
+                html.Datalist(
+                    id="examples",
+                    children=[
+                        html.Option(value="match_string(response, 'ets')"),
+                        html.Option(value="match_hex(response, '661b')"),
+                        html.Option(value="color = 'G'"),
+                        html.Option(value="delay > 100"),
+                        html.Option(value="length > 100"),
+                    ],
+                ),
+                dcc.Input(
+                    id="query-input",
+                    type="text",
+                    list="examples",
+                    # (as applied; see update_store())
+                    value=config.query or "",
+                    style={"width": "100%"},
+                    className="mt-2",
+                    placeholder="SELECT * FROM experiments WHERE",
+                ),
+            ]
         )
     )
 
     selection = dbc.Card(
         dbc.CardBody(
             [
-                # the directory and its databases, next to each other
-                html.Div(
-                    [
-                        # only local users may pick another directory (see data_directory())
-                        dbc.InputGroup(
-                            [
-                                dbc.InputGroupText("directory"),
-                                dbc.Input(
-                                    id="directory-input",
-                                    type="text",
-                                    value=directory,
-                                    debounce=True,
-                                    disabled=not local,
-                                    placeholder="directory with databases (press enter to apply)",
-                                ),
-                                # (a plain button, like Update)
-                                html.Button("Browse…", id="directory-browse", n_clicks=0, disabled=not local),
-                            ],
-                            style={"flex": 1, "minWidth": 0},
-                        ),
-                        dcc.Dropdown(
-                            id="database-dropdown",
-                            style={"flex": 1, "minWidth": 0},
-                            options=get_databases(data_directory(directory) or server_config.directory),
-                            placeholder="database",
-                            value=config.database,
-                        ),
-                    ],
-                    className="d-flex gap-2 mb-2",
+                dcc.Dropdown(
+                    id="database-dropdown",
+                    style={"width": "100%"},
+                    options=get_databases(data_directory(directory) or server_config.directory),
+                    placeholder="database",
+                    value=config.database,
                 ),
                 directory_browser(),
                 html.Div(
