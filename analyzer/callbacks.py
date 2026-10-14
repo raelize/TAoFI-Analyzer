@@ -17,7 +17,7 @@ from analyzer.dataset import DatasetError, get_dataset
 from analyzer.table import get_table
 from analyzer.layout import axis_style
 from analyzer.timing import register_timing, timed
-from analyzer.graphs import AXES, GRAPHS, graph_axes
+from analyzer.graphs import AXES, AXIS_NAMES, GRAPH_PLOTS, GRAPHS, graph_axes
 from analyzer.graphs.common import clicked_experiment, message_figure
 
 # the text fields of the graph tab; applied by Update or enter (see update_store())
@@ -316,7 +316,8 @@ def register_callbacks(app):
         axes = graph_axes(config.graph)
         missing = [axis for axis in axes if getattr(config, axis) is None]
         if missing:
-            return message_figure(f"Select the {' and '.join(missing)} axis to show the {config.graph} graph")
+            names = " and ".join(AXIS_NAMES[axis] for axis in missing)
+            return message_figure(f"Select the {names} to show the {config.graph} graph")
 
         try:
             dataset = get_dataset(config)
@@ -358,7 +359,8 @@ def register_callbacks(app):
         except DatasetError as e:
             return html.Div(str(e), className="text-danger")
         # the traces are the colors of the graph, see color_traces()
-        index = clicked_experiment(dataset.colors_for(config), points[0].get("curveNumber", 0), points[0]["pointNumber"])
+        index = clicked_experiment(dataset.colors_for(config), points[0].get("curveNumber", 0), points[0]["pointNumber"],
+                                   GRAPH_PLOTS.get(config.graph, 1))
         if index is None:
             # (the database was loaded again in the meantime)
             return "The database changed: click the point again."

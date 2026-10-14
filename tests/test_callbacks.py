@@ -142,6 +142,7 @@ def test_axis_lists(client, store):
 
 @pytest.mark.parametrize("graph_type, shown", [
     ("scatter", ["x", "y"]),
+    ("scatter2", ["x", "y", "x2", "y2"]),
     ("3d", ["x", "y", "z"]),
     ("mega", []),
 ])
@@ -266,8 +267,8 @@ def test_3d_graph(client):
 
 
 @pytest.mark.parametrize("graph_type, axes, message", [
-    ("scatter", {"x": None}, "Select the x axis to show the scatter graph"),
-    ("3d", {}, "Select the z axis to show the 3d graph"),
+    ("scatter", {"x": None}, "Select the x-axis to show the scatter graph"),
+    ("3d", {}, "Select the z-axis to show the 3d graph"),
     ("3d", {"z": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
     ("scatter", {"y": "no_such_column"}, f"{EXAMPLE_DATABASE} has no no_such_column column"),
     ("scatter", {"x": "a", "y": "b"}, f"{EXAMPLE_DATABASE} has no a, b columns"),
@@ -276,6 +277,20 @@ def test_graph_without_its_axes(client, store, graph_type, axes, message):
     code, response = graph(client, dict(store, graph=graph_type, **axes))
     assert code == 200
     assert graph_message(response) == message
+
+
+def test_scatter2_graph(client, store):
+    code, response = graph(client, dict(store, graph="scatter2", x2="id", y2="delay", colors={"red": ["^", "all"]}))
+    assert code == 200
+    figure = response["graph"]["figure"]
+    traces = figure["data"]
+    # the same colors in both plots, in the legend once
+    assert [(t["xaxis"], t["yaxis"]) for t in traces] == [("x", "y")] * 2 + [("x2", "y2")] * 2
+    assert [t["showlegend"] for t in traces] == [True, True, False, False]
+    assert legend(response) == ["green ( 3004 / 43.9% )", "all ( 3839 / 56.1% )"] * 2
+    assert [figure["layout"][a]["title"]["text"] for a in ("xaxis", "yaxis", "xaxis2", "yaxis2")] == ["delay", "length", "id", "delay"]
+    code, response = graph(client, dict(store, graph="scatter2"))
+    assert graph_message(response) == "Select the x-axis (right) and y-axis (right) to show the scatter2 graph"
 
 
 def test_mega_graph(client, store):
@@ -339,6 +354,10 @@ def test_clicked_experiment(client, tmp_path, make_database):
     assert "6 bytes, the same for 2 of 4 experiments" in shown
     assert "63 72 61 73 68 00" in shown
     assert "id 4" in text(click(client, store, 1, 0)[1]["experiment"]["children"])
+    # scatter2: the same traces in the second plot
+    scatter2 = dict(store, graph="scatter2", x2="length", y2="id")
+    assert "id 4" in text(click(client, scatter2, 3, 0)[1]["experiment"]["children"])
+    assert "id 2" in text(click(client, scatter2, 2, 1)[1]["experiment"]["children"])
     # e.g. a graph of before the database was loaded again
     for curve, point in [(0, 3), (2, 0)]:
         code, response = click(client, store, curve, point)

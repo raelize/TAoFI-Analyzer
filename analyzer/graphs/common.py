@@ -88,11 +88,15 @@ def color_traces(colors):
     return [(code, masks[code]) for code in COLOR_ORDER if code in masks]
 
 
-def clicked_experiment(colors, curve, point):
-    """The experiment (row) of point ``point`` of trace ``curve``, or None (not in this graph)."""
+def clicked_experiment(colors, curve, point, plots=1):
+    """The experiment (row) of point ``point`` of trace ``curve``, or None (not in this graph).
+
+    A graph with several ``plots`` (scatter2) has these traces for each plot.
+    """
     traces = color_traces(colors)
-    if not 0 <= curve < len(traces):
+    if not 0 <= curve < len(traces) * plots:
         return None
+    curve %= len(traces)
     rows = np.flatnonzero(traces[curve][1])
     return int(rows[point]) if 0 <= point < len(rows) else None
 

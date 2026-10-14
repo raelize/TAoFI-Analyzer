@@ -8,7 +8,7 @@ from dash.exceptions import PreventUpdate
 
 from analyzer.config import COLORS, AnalyzerConfig, server_config
 from analyzer.database import data_directory, get_databases, is_local_request
-from analyzer.graphs import AXES, GRAPHS, graph_axes
+from analyzer.graphs import AXES, AXIS_NAMES, GRAPHS, graph_axes
 from analyzer.timing import timed
 
 # the guide tab (relative to the code, not the current directory)
@@ -167,7 +167,7 @@ def graph_tab(config):
                 html.Div(
                     [
                         *[
-                            dcc.Dropdown(id=f"{axis}-dropdown", placeholder=AXIS_PLACEHOLDERS[axis], value=getattr(config, axis),
+                            dcc.Dropdown(id=f"{axis}-dropdown", placeholder=AXIS_NAMES[axis], value=getattr(config, axis),
                                          style=axis_style(config.graph, axis))
                             for axis in AXES
                         ],
@@ -247,9 +247,6 @@ def graph_tab(config):
     )
 
     return [query, selection, graph, experiment, recolor]
-
-
-AXIS_PLACEHOLDERS = {"x": "x-axis", "y": "y-axis", "z": "z-axis", "x2": "x-axis (right)", "y2": "y-axis (right)"}
 
 
 def axis_style(graph, axis):
