@@ -180,31 +180,37 @@ def graph_tab(config, refresh):
     selection = dbc.Card(
         dbc.CardBody(
             [
-                # only local users may pick another directory (see data_directory())
-                dbc.InputGroup(
+                # the directory and its databases, next to each other
+                html.Div(
                     [
-                        dbc.InputGroupText("directory"),
-                        dbc.Input(
-                            id="directory-input",
-                            type="text",
-                            value=directory,
-                            debounce=True,
-                            disabled=not local,
-                            placeholder="directory with databases (press enter to apply)",
+                        # only local users may pick another directory (see data_directory())
+                        dbc.InputGroup(
+                            [
+                                dbc.InputGroupText("directory"),
+                                dbc.Input(
+                                    id="directory-input",
+                                    type="text",
+                                    value=directory,
+                                    debounce=True,
+                                    disabled=not local,
+                                    placeholder="directory with databases (press enter to apply)",
+                                ),
+                                # (a plain button, like Update)
+                                html.Button("Browse…", id="directory-browse", n_clicks=0, disabled=not local),
+                            ],
+                            style={"flex": 1, "minWidth": 0},
                         ),
-                        # (a plain button, like Update)
-                        html.Button("Browse…", id="directory-browse", n_clicks=0, disabled=not local),
+                        dcc.Dropdown(
+                            id="database-dropdown",
+                            style={"flex": 1, "minWidth": 0},
+                            options=get_databases(data_directory(directory) or server_config.directory),
+                            placeholder="database",
+                            value=config.database,
+                        ),
                     ],
-                    className="mb-2",
+                    className="d-flex gap-2 mb-2",
                 ),
                 directory_browser(),
-                dcc.Dropdown(
-                    id="database-dropdown",
-                    style={"width": "100%"},
-                    options=get_databases(data_directory(directory) or server_config.directory),
-                    placeholder="database",
-                    value=config.database,
-                ),
                 html.Div(
                     [
                         *[
