@@ -92,7 +92,7 @@ MAX_POINTS = {
     "mega": 200_000,
 }
 # instead of MAX_POINTS for every graph type (--max-points; 0: all)
-DEFAULT_MAX_POINTS = None
+DEFAULT_MAX_POINTS: int | None = None
 
 
 def max_points(config):

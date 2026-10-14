@@ -17,7 +17,9 @@ GUIDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pages", 
 # centered column used by the header, the tabs and their contents
 PAGE_STYLE = {"width": "80%", "border-style": "none", "margin": "0 auto"}
 
-LOADING = {"type": "circle", "delay_show": 150}
+def loading(child, **kwargs):
+    """``child`` with a loading indicator (shown after 150 ms)."""
+    return dcc.Loading(child, type="circle", delay_show=150, **kwargs)
 
 # the panel of the experiment clicked in the graph
 EXPERIMENT_SHOWN = {"width": "420px", "flexShrink": 0, "maxHeight": "1000px", "overflowY": "auto"}
@@ -259,11 +261,10 @@ def graph_tab(config, refresh):
             html.Div(
                 [
                     html.Div(
-                        dcc.Loading(
+                        loading(
                             # (resized when the experiment is shown next to it, see resize_graph)
                             dcc.Graph(id="graph", config={"displayModeBar": True}),
                             overlay_style={"visibility": "visible", "opacity": 0.4},
-                            **LOADING,
                         ),
                         style={"flex": 1, "minWidth": 0},
                     ),
@@ -394,7 +395,7 @@ def data_tab(config, refresh):
 
     grid = dbc.Card(
         dbc.CardBody(
-            dcc.Loading(
+            loading(
                 html.Div(
                     id="data",
                     className="border-0 p-2 bg-light rounded",
@@ -408,7 +409,6 @@ def data_tab(config, refresh):
                     },
                 ),
                 overlay_style={"visibility": "visible", "opacity": 0.4},
-                **LOADING,
             ),
         )
     )
@@ -454,7 +454,7 @@ def database_tab(config, refresh):
             ),
         )
     )
-    return [query, dcc.Loading(html.Div(id="query-output", className="mt-2"), **LOADING)]
+    return [query, loading(html.Div(id="query-output", className="mt-2"))]
 
 
 def guide_tab(config, refresh):

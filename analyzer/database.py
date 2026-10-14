@@ -383,16 +383,14 @@ def load_experiments(database_path, query, after=0, responses=None):
     try:
         # (experiments added while loading are loaded the next time)
         last = max(con.execute("SELECT max(rowid) FROM experiments").fetchone()[0] or 0, after)
-        start, columns = after, None
+        # the columns (the first one is the rowid)
+        columns = [d[0] for d in con.execute("SELECT rowid, * FROM experiments LIMIT 0").description][1:]
+        values = [[] for _ in columns]
+        response = columns.index("response") if "response" in columns else None
+        start = after
         while True:
             end = min(start + LOAD_CHUNK, last)
-            cursor = con.execute(sql, (start, end))
-            if columns is None:
-                # the first column is the rowid
-                columns = [d[0] for d in cursor.description][1:]
-                values = [[] for _ in columns]
-                response = columns.index("response") if "response" in columns else None
-            rows = cursor.fetchall()
+            rows = con.execute(sql, (start, end)).fetchall()
             if rows and (rows[0][0] <= start or rows[-1][0] > end):
                 # e.g. "1) OR (1": not one condition, it escaped the range of rowids
                 raise ValueError("the query must be a condition on the experiments (e.g. delay > 100)")
@@ -413,7 +411,7 @@ def load_experiments(database_path, query, after=0, responses=None):
     finally:
         con.close()
 
-    return pd.DataFrame(dict(zip(columns, values)), columns=columns), last
+    return pd.DataFrame(dict(zip(columns, values)), columns=pd.Index(columns)), last
 
 
 def load_dataframe(database_path, query):

@@ -3,6 +3,7 @@ import json
 import os
 import zlib
 from dataclasses import asdict
+from typing import Any
 
 import dash_bootstrap_components as dbc
 import pandas as pd
@@ -740,6 +741,7 @@ def column_defs(table, wraptext, hidden):
 
     definitions = []
     for column in table.columns:
+        definition: dict[str, Any]
         if column in table.numeric and table.squeezed:
             # min/max columns (and amount)
             definition = {"maxWidth": 150, **centered}
