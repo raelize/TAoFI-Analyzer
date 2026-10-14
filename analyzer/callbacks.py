@@ -30,6 +30,15 @@ _MAX_ROWS = 1000  # per request of the data grid
 def register_callbacks(app):
     register_timing(app)
 
+    # the config-store for the graph tab's callbacks: a callback with inputs on
+    # the graph tab and outside of it (the config-store) fails when the store
+    # changes while another tab is shown (e.g. switching tabs during an update)
+    app.clientside_callback(
+        "function (store) { return store; }",
+        Output("graph-store", "data"),
+        Input("config-store", "data"),
+    )
+
     # callback for remembering the zoomed area of the graph (shown on the information tab);
     # runs in the browser and reads the plot's current axes, so quick successive
     # zooms can't be merged into an outdated area
@@ -40,7 +49,7 @@ def register_callbacks(app):
             const plot = document.querySelector("#graph .js-plotly-plot");
             // the graph keeps its zoom while this stays the same (see graph_revision())
             const revision = store ? [store.directory, store.database, store.x, store.y, store.z, store.x2, store.y2, store.graph].join("|") : null;
-            if (triggered.includes("config-store.data")) {
+            if (triggered.includes("graph-store.data")) {
                 // e.g. auto refresh: still zoomed in the same graph; otherwise another graph, not zoomed
                 return zoomed && zoomed.revision === revision ? dash_clientside.no_update : null;
             }
@@ -61,7 +70,7 @@ def register_callbacks(app):
         """,
         Output("zoom-store", "data"),
         Input("graph", "relayoutData"),
-        Input("config-store", "data"),
+        Input("graph-store", "data"),
         State("zoom-store", "data"),
         prevent_initial_call=True,
     )
@@ -178,12 +187,13 @@ def register_callbacks(app):
     @app.callback(
         Output("refresh-timer", "disabled"),
         Output("refresh-timer", "interval"),
+        Output("refresh-settings", "data"),
         Input("switch-autorefresh", "value"),
         Input("refresh-seconds", "value"),
     )
     def update_refresh_timer(enabled, seconds):
         seconds = max(1, int(seconds or 10))
-        return not enabled, seconds * 1000
+        return not enabled, seconds * 1000, {"enabled": bool(enabled), "seconds": seconds}
 
     # callback for updating store
     @app.callback(
@@ -299,7 +309,7 @@ def register_callbacks(app):
     # callback graph; chained from update_store()
     @app.callback(
         Output("graph", "figure"),
-        Input("config-store", "data"),
+        Input("graph-store", "data"),
         Input("switch-hover", "value"),
         prevent_initial_call=True,
     )
@@ -365,6 +375,44 @@ def register_callbacks(app):
             # (the database was loaded again in the meantime)
             return "The database changed: click the point again."
         return experiment_card(dataset, config, index)
+
+    # callback for auto refresh on the data tab: the grid fetches its rows again
+    # when the database changed (from its latest version, see get_dataset())
+    @app.callback(
+        Output("data-dbkey", "data"),
+        Input("data-refresh-timer", "n_intervals"),
+        State("data-dbkey", "data"),
+        State("config-store", "data"),
+        prevent_initial_call=True,
+    )
+    def refresh_data(n_intervals, shown, store):
+        config = AnalyzerConfig.from_store(store)
+        path = database_path(config.directory, config.database)
+        if path is None:
+            raise PreventUpdate
+        dbkey = repr(file_key(path))
+        if dbkey == shown:
+            raise PreventUpdate
+        return dbkey
+
+    # (the grid keeps its page, sorting and filters)
+    app.clientside_callback(
+        """
+        function (dbkey) {
+            for (const element of document.querySelectorAll('[id*="data-grid"]')) {
+                try {
+                    dash_ag_grid.getApi(element.id).refreshInfiniteCache();
+                } catch (e) {
+                    // (not the grid itself, or not ready yet)
+                }
+            }
+            return dash_clientside.no_update;
+        }
+        """,
+        Output("data-refresh", "data"),
+        Input("data-dbkey", "data"),
+        prevent_initial_call=True,
+    )
 
     # callback data; chained from update_graph()
     @app.callback(

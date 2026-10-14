@@ -31,6 +31,9 @@ def create_layout(app):
             # timings of the server callbacks (see timing.py)
             dcc.Store(id="timing-store"),
             dcc.Store(id="timing-last"),
+            # the auto refresh settings of the graph tab, for the timers of the tabs
+            dcc.Store(id="refresh-settings"),
+            dcc.Store(id="data-refresh"),
             html.Div(
                 [
                     html.H4("Research by Raelize"),
@@ -75,15 +78,26 @@ def create_layout(app):
         Output("tabs-content", "children"),
         Input("tabs", "value"),
         State("config-store", "data"),
+        State("refresh-settings", "data"),
     )
     @timed("tab")
-    def render_content(tab, store):
+    def render_content(tab, store, refresh):
         if tab not in TABS:
             raise PreventUpdate
-        return html.Div(TABS[tab](AnalyzerConfig.from_store(store)), style=PAGE_STYLE)
+        return html.Div(TABS[tab](AnalyzerConfig.from_store(store), refresh or {}), style=PAGE_STYLE)
 
 
-def graph_tab(config):
+def refresh_timer(timer_id, refresh):
+    """An auto refresh timer of a tab, as set on the graph tab (see update_refresh_timer()).
+
+    Every tab that refreshes has its own: a callback with inputs on several
+    tabs (e.g. one timer for all of them) fails on the other tabs.
+    """
+    seconds = max(1, int(refresh.get("seconds") or 10))
+    return dcc.Interval(id=timer_id, interval=seconds * 1000, disabled=not refresh.get("enabled"))
+
+
+def graph_tab(config, refresh):
     # the CLI/env presets are the initial store, so everything comes from the store
     local = is_local_request()
     directory = (config.directory if local else None) or server_config.directory
@@ -129,7 +143,7 @@ def graph_tab(config):
                         style={"width": "70px", "marginLeft": "5px"},
                         persistence=True,
                     ),
-                    dcc.Interval(id="refresh-timer", interval=10000, disabled=True),
+                    refresh_timer("refresh-timer", refresh),
                 ],
                 style={"display": "flex", "alignItems": "center"},
             )
@@ -246,7 +260,8 @@ def graph_tab(config):
         )
     )
 
-    return [query, selection, graph, experiment, recolor]
+    # (see the graph-store callback)
+    return [query, selection, graph, experiment, recolor, dcc.Store(id="graph-store")]
 
 
 def axis_style(graph, axis):
@@ -284,7 +299,7 @@ def directory_browser():
     )
 
 
-def data_tab(config):
+def data_tab(config, refresh):
     controls = dbc.Card(
         dbc.CardBody(
             [
@@ -323,17 +338,20 @@ def data_tab(config):
         )
     )
 
-    return [controls, grid]
+    # auto refresh: the version of the database the grid shows (see refresh_data())
+    timer = html.Div([refresh_timer("data-refresh-timer", refresh), dcc.Store(id="data-dbkey", data=config.dbkey)])
+
+    return [controls, grid, timer]
 
 
-def information_tab(config):
+def information_tab(config, refresh):
     def card(header, id):
         return dbc.Card([dbc.CardHeader(header), dbc.CardBody(dcc.Markdown("", id=id))])
 
     return [card("Arguments:", "argv"), card("Points:", "points"), card("Store:", "printstore")]
 
 
-def database_tab(config):
+def database_tab(config, refresh):
     query = dbc.Card(
         dbc.CardBody(
             # all on one line
@@ -364,7 +382,7 @@ def database_tab(config):
     return [query, dcc.Loading(html.Pre(id="query-output"), **LOADING)]
 
 
-def guide_tab(config):
+def guide_tab(config, refresh):
     with open(GUIDE, "r", encoding="utf-8") as f:
         guide_text = f.read()
     return [dbc.Card(dbc.CardBody(dcc.Markdown(guide_text)))]

@@ -48,7 +48,7 @@ def store(client):
 
 
 def graph(client, store, hover=True):
-    return client.call("graph.figure", {"config-store.data": store, "switch-hover.value": hover}, "config-store.data")
+    return client.call("graph.figure", {"graph-store.data": store, "switch-hover.value": hover}, "graph-store.data")
 
 
 def data(client, store, squeeze=False, hidden=(), wraptext=False):
@@ -205,6 +205,24 @@ def test_auto_refresh_keeps_the_applied_text_fields(client, tmp_path, make_datab
     refreshed = response["config-store"]["data"]
     assert refreshed["dbkey"] != store["dbkey"]
     assert (refreshed["query"], refreshed["colors"]["red"][0]) == ("delay > 0", "x")
+
+
+def test_data_tab_auto_refresh(client, tmp_path, make_database):
+    make_database(rows=[(1, 1, 1, "G", b"x")])
+    store = dict(client.layout_store(), directory=str(tmp_path), database="test.sqlite")
+
+    def refresh(shown):
+        values = {"data-refresh-timer.n_intervals": 1, "data-dbkey.data": shown, "config-store.data": store}
+        return client.call("data-dbkey.data", values, "data-refresh-timer.n_intervals")
+
+    code, response = refresh("")
+    assert code == 200
+    shown = response["data-dbkey"]["data"]
+    # unchanged: nothing to do
+    assert refresh(shown)[0] == 204
+    append(tmp_path / "test.sqlite")
+    code, response = refresh(shown)
+    assert code == 200 and response["data-dbkey"]["data"] != shown
 
 
 @pytest.mark.parametrize("trigger, applied", [

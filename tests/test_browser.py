@@ -3,6 +3,9 @@
 Opt-in: uv sync --group browser && uv run pytest -m browser
 Uses the installed Chrome, or Playwright's Chromium (uv run playwright install chromium).
 """
+import os
+import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -23,10 +26,15 @@ GRAPH_READY = f"{PLOT} && {PLOT}.data && {PLOT}.data.length > 0"
 @pytest.fixture(scope="module")
 def server():
     """The analyzer (built-in server) with the example database and axes preselected."""
+    yield from analyzer(EXAMPLE_DIRECTORY, EXAMPLE_DATABASE)
+
+
+def analyzer(directory, database):
+    """Run the analyzer for ``directory`` (with ``database`` and the axes preselected); yields its URL."""
     port = free_port()
     process = subprocess.Popen(
-        [sys.executable, "taofi-analyzer.py", EXAMPLE_DIRECTORY, "--port", str(port),
-         "--database", EXAMPLE_DATABASE, "--x", "delay", "--y", "length"],
+        [sys.executable, "taofi-analyzer.py", directory, "--port", str(port),
+         "--database", database, "--x", "delay", "--y", "length"],
         cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
     url = f"http://127.0.0.1:{port}/"
@@ -192,6 +200,36 @@ def test_timing_badge(page):
     page.wait_for_selector(".ag-row", timeout=20000)
     # the data table and its first page of rows together
     page.wait_for_function("document.querySelector('#timing-label').innerText.trim() === 'data:'", timeout=10000)
+
+
+def test_data_tab_auto_refresh(browser, tmp_path):
+    """A database that is being written to: the data tab shows the new experiments, on the same page."""
+    shutil.copy(os.path.join(EXAMPLE_DIRECTORY, EXAMPLE_DATABASE), tmp_path / "live.sqlite")
+    url = analyzer(str(tmp_path), "live.sqlite")
+    page = browser.new_page(viewport={"width": 1600, "height": 1200})
+    errors = []
+    page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+    try:
+        page.goto(next(url))
+        page.fill("#refresh-seconds", "1")
+        page.click("#switch-autorefresh")
+        open_tab(page, "Data")
+        page.wait_for_selector(".ag-row", timeout=20000)
+        rows = """(() => {
+            const grid = document.querySelector('[id*="data-grid"]');
+            return dash_ag_grid.getApi(grid.id).getDisplayedRowCount();
+        })()"""
+        before = page.evaluate(rows)
+        con = sqlite3.connect(tmp_path / "live.sqlite")
+        con.executemany("INSERT INTO experiments VALUES (?, 1, 1, 'R', ?)", [(100000 + i, b"new %d" % i) for i in range(5)])
+        con.commit()
+        con.close()
+        # squeezed: 5 new responses
+        page.wait_for_function(f"{rows} === {before + 5}", timeout=10000)
+        assert not errors
+    finally:
+        page.close()
+        next(url, None)
 
 
 def test_stale_page_reloads(page):
