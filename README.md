@@ -10,6 +10,30 @@ This is a new version of the `TAoFI-Analyzer` with additional features that were
 
 **Important:** This can be considered a development branch and things may not work as expected.
 
+## Screenshots
+
+The tabs of the analyzer, with a made-up characterization of an unrolled loop: the target increments a counter 10000 times (one instruction after another) and prints it. Glitches that are too long reset the target (yellow); just below that, an increment is skipped (red: a lower counter) or the target crashes (magenta).
+
+**Graph**: the experiments, colored by their classification (here the glitch delay against its length)
+
+![The graph tab](docs/screenshots/graph.png)
+
+**Data**: the experiments as a table, squeezed: one row per response
+
+![The data tab](docs/screenshots/data.png)
+
+**Information**: the arguments of the campaign, the zoomed range of the graph and the settings
+
+![The information tab](docs/screenshots/information.png)
+
+**Database**: SQL queries on the database (here: the counters of the successful glitches)
+
+![The database tab](docs/screenshots/database.png)
+
+**Guide**: the manual
+
+![The guide tab](docs/screenshots/guide.png)
+
 ## Usage
 
 It's adviced to run the `TAoFI-Analyzer` from a virtual environment:
@@ -79,6 +103,12 @@ $ uv sync --group browser
 $ uv run pytest -m browser
 # how long opening databases of 1000 to 1000000 experiments takes (generates up to ~4 GB, see tests/test_profile.py)
 $ uv run pytest -m profile -s
+```
+
+The screenshots above are made by `docs/screenshots.py` (with its made-up database; it needs the browser group too):
+
+```bash
+$ uv run python docs/screenshots.py
 ```
 
 `ruff format` formatted the whole code base once; to let `git blame` skip that commit:
